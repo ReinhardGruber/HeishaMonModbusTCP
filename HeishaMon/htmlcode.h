@@ -1,7 +1,7 @@
 static const char webHeader[] PROGMEM  =
   "<!DOCTYPE html>"
   "<html>"
-  "<title>Heisha monitor</title>"
+  "<title>Heisha monitor with Modbus TCP</title>"
   "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
   "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">";
 
@@ -9,7 +9,7 @@ static const char refreshMeta[] PROGMEM = "<meta http-equiv=\"refresh\" content=
 static const char webBodyStart[] PROGMEM =
   "<body>"
   "<button class=\"w3-button w3-red w3-xlarge w3-left\" onclick=\"openLeftMenu()\">&#9776;</button>"
-  "<header class=\"w3-container w3-card w3-theme\"><h1>Heisha monitor</h1></header>";
+  "<header class=\"w3-container w3-card w3-theme\"><h1>Heisha monitor with Modbus TCP</h1></header>";
 
 static const char webFooter[] PROGMEM  = "</body></html>";
 static const char menuJS[] PROGMEM =
@@ -674,7 +674,7 @@ static const char webCSS[] PROGMEM =
   ".w3-pink,.w3-hover-pink:hover{color:#fff!important;background-color:#e91e63!important}"
   ".w3-purple,.w3-hover-purple:hover{color:#fff!important;background-color:#9c27b0!important}"
   ".w3-deep-purple,.w3-hover-deep-purple:hover{color:#fff!important;background-color:#673ab7!important}"
-  ".w3-red,.w3-hover-red:hover{color:#fff!important;background-color:#f44336!important}"
+  ".w3-red,.w3-hover-red:hover{color:#fff!important;background-color:#368DF4!important}"
   ".w3-sand,.w3-hover-sand:hover{color:#000!important;background-color:#fdf5e6!important}"
   ".w3-teal,.w3-hover-teal:hover{color:#fff!important;background-color:#009688!important}"
   ".w3-yellow,.w3-hover-yellow:hover{color:#000!important;background-color:#ffeb3b!important}"
@@ -704,7 +704,7 @@ static const char webCSS[] PROGMEM =
   ".w3-text-pink,.w3-hover-text-pink:hover{color:#e91e63!important}"
   ".w3-text-purple,.w3-hover-text-purple:hover{color:#9c27b0!important}"
   ".w3-text-deep-purple,.w3-hover-text-deep-purple:hover{color:#673ab7!important}"
-  ".w3-text-red,.w3-hover-text-red:hover{color:#f44336!important}"
+  ".w3-text-red,.w3-hover-text-red:hover{color:#368DF4!important}"
   ".w3-text-sand,.w3-hover-text-sand:hover{color:#fdf5e6!important}"
   ".w3-text-teal,.w3-hover-text-teal:hover{color:#009688!important}"
   ".w3-text-yellow,.w3-hover-text-yellow:hover{color:#d2be0e!important}"
@@ -730,7 +730,7 @@ static const char webCSS[] PROGMEM =
   ".w3-border-pink,.w3-hover-border-pink:hover{border-color:#e91e63!important}"
   ".w3-border-purple,.w3-hover-border-purple:hover{border-color:#9c27b0!important}"
   ".w3-border-deep-purple,.w3-hover-border-deep-purple:hover{border-color:#673ab7!important}"
-  ".w3-border-red,.w3-hover-border-red:hover{border-color:#f44336!important}"
+  ".w3-border-red,.w3-hover-border-red:hover{border-color:#368DF4!important}"
   ".w3-border-sand,.w3-hover-border-sand:hover{border-color:#fdf5e6!important}"
   ".w3-border-teal,.w3-hover-border-teal:hover{border-color:#009688!important}"
   ".w3-border-yellow,.w3-hover-border-yellow:hover{border-color:#ffeb3b!important}"
@@ -741,7 +741,7 @@ static const char webCSS[] PROGMEM =
   ".w3-border-dark-grey,.w3-hover-border-dark-grey:hover,.w3-border-dark-gray,.w3-hover-border-dark-gray:hover{border-color:#616161!important}"
   ".w3-border-pale-red,.w3-hover-border-pale-red:hover{border-color:#ffe7e7!important}.w3-border-pale-green,.w3-hover-border-pale-green:hover{border-color:#e7ffe7!important}"
   ".w3-border-pale-yellow,.w3-hover-border-pale-yellow:hover{border-color:#ffffcc!important}.w3-border-pale-blue,.w3-hover-border-pale-blue:hover{border-color:#e7ffff!important}"
-  ".w3-theme {color:#fff !important; background-color:#f44336 !important}"
+  ".w3-theme {color:#fff !important; background-color:#368DF4 !important}"
   ".w3-btn { margin-bottom:10px; }"
   ".heishatable { display: none; }"
   "#cli{ background: black; color: white; width: 100%; height: 400px!important; }"

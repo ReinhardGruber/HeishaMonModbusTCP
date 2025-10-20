@@ -45,8 +45,11 @@
 #include "commands.h"
 #include "rules.h"
 #include "version.h"
+#include "ModbusServerTCPasync.h"
 
 DNSServer dnsServer;
+
+ModbusServerTCPasync myServer;
 
 //to read bus voltage in stats
 #ifdef ESP8266
