@@ -16,10 +16,21 @@ void mqttGPIOCallback(char* topic, char* value) {
 #ifdef ESP32  
   if (strcmp_P(PSTR("relay/one"), topic) == 0) {
     log_message(_F("GPIO: MQTT message received 'relay/one'"));
-    digitalWrite(relayOnePin,((stricmp((char*)"true", value) == 0) || (stricmp((char*)"on", value) == 0)  || (stricmp((char*)"enable", value) == 0)|| (String(value).toInt() == 1 )));
+    setRelay1((stricmp((char*)"true", value) == 0) || (stricmp((char*)"on", value) == 0)  || (stricmp((char*)"enable", value) == 0)|| (String(value).toInt() == 1 ));
   } else if (strcmp_P(PSTR("relay/two"), topic) == 0) {
     log_message(_F("GPIO: MQTT message received 'relay/two'"));
-    digitalWrite(relayTwoPin,((stricmp((char*)"true", value) == 0) || (stricmp((char*)"on", value) == 0)  || (stricmp((char*)"enable", value) == 0)|| (String(value).toInt() == 1 )));
+    setRelay2((stricmp((char*)"true", value) == 0) || (stricmp((char*)"on", value) == 0)  || (stricmp((char*)"enable", value) == 0)|| (String(value).toInt() == 1 ));
   }
 #endif
+}
+
+
+void setRelay1(bool state)
+{
+  digitalWrite(relayOnePin, state);
+}
+
+void setRelay2(bool state)
+{
+  digitalWrite(relayTwoPin, state);
 }

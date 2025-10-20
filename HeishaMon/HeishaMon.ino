@@ -45,11 +45,10 @@
 #include "commands.h"
 #include "rules.h"
 #include "version.h"
-#include "ModbusServerTCPasync.h"
+#include "HeishaModbusServer.h"
 
 DNSServer dnsServer;
 
-ModbusServerTCPasync myServer;
 
 //to read bus voltage in stats
 #ifdef ESP8266
@@ -132,7 +131,8 @@ static uint8_t cmdstart = 0;
 static uint8_t cmdend = 0;
 static uint8_t cmdnrel = 0;
 
-
+// HeishaModBusServer instance
+HeishaModBusServer modbusServer;
 
 // mqtt
 WiFiClient mqtt_wifi_client;
@@ -1450,6 +1450,9 @@ void setup() {
   setupETH();
 #endif
 
+  loggingSerial.println(F("Setup ModBusTCP Server.."));
+  modbusServer.setup();
+
   loggingSerial.println(F("Setup MQTT..."));
   setupMqtt();
 
@@ -1485,6 +1488,8 @@ void setup() {
     digitalWrite(ENABLEOTPIN, HIGH);
     #endif
     HeishaOTSetup();
+
+
   }
 
   loggingSerial.println(F("Enabling rules.."));
@@ -1593,6 +1598,8 @@ void loop() {
   check_wifi();
   // Handle OTA first.s
   ArduinoOTA.handle();
+
+  modbusServer.loop();
 
   mqtt_client.loop();
 
