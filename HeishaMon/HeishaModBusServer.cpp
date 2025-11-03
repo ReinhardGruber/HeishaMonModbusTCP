@@ -39,26 +39,10 @@ constexpr TopicRange kTopicRanges[] = {
   { OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, TopicSource::Optional }
 };
 
-enum class CommandSource {
-  Main,
-  Optional
-};
-
-struct CommandRange {
-  uint16_t baseAddress;
-  uint16_t count;
-  CommandSource source;
-};
-
 template<typename T, size_t N>
 constexpr size_t arraySize(const T (&)[N]) {
   return N;
 }
-
-constexpr CommandRange kCommandRanges[] = {
-  { COMMAND_BASE, arraySize(commands), CommandSource::Main },
-  { OPTIONAL_COMMAND_BASE, arraySize(optionalCommands), CommandSource::Optional }
-};
 
 bool nonNumericMainReported[NUMBER_OF_TOPICS] = { false };
 bool nonNumericExtraReported[NUMBER_OF_TOPICS_EXTRA] = { false };
@@ -195,24 +179,52 @@ bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
   return true;
 }
 
-bool getCommandTopic(uint16_t address, char *topicName, size_t length) {
-  for (const CommandRange &range : kCommandRanges) {
-    uint16_t rangeEnd = range.baseAddress + range.count;
-    if ((address >= range.baseAddress) && (address < rangeEnd)) {
-      uint16_t index = address - range.baseAddress;
-      if (range.source == CommandSource::Main) {
-        cmdStruct cmd;
-        memcpy_P(&cmd, &commands[index], sizeof(cmd));
-        strncpy(topicName, cmd.name, length);
-      } else {
-        optCmdStruct cmd;
-        memcpy_P(&cmd, &optionalCommands[index], sizeof(cmd));
-        strncpy(topicName, cmd.name, length);
-      }
+bool copyMainCommandTopic(uint16_t address, char *topicName, size_t length) {
+  if (length == 0) {
+    return false;
+  }
+
+  for (size_t i = 0; i < arraySize(commands); ++i) {
+    cmdStruct cmd;
+    memcpy_P(&cmd, &commands[i], sizeof(cmd));
+    if ((COMMAND_BASE + cmd.id) == address) {
+      strncpy(topicName, cmd.name, length);
       topicName[length - 1] = '\0';
       return true;
     }
   }
+  return false;
+}
+
+bool copyOptionalCommandTopic(uint16_t address, char *topicName, size_t length) {
+  if (length == 0) {
+    return false;
+  }
+
+  if (address < OPTIONAL_COMMAND_BASE) {
+    return false;
+  }
+
+  uint16_t index = address - OPTIONAL_COMMAND_BASE;
+  if (index >= arraySize(optionalCommands)) {
+    return false;
+  }
+
+  optCmdStruct cmd;
+  memcpy_P(&cmd, &optionalCommands[index], sizeof(cmd));
+  strncpy(topicName, cmd.name, length);
+  topicName[length - 1] = '\0';
+  return true;
+}
+
+bool getCommandTopic(uint16_t address, char *topicName, size_t length) {
+  if (copyMainCommandTopic(address, topicName, length)) {
+    return true;
+  }
+  else if (copyOptionalCommandTopic(address, topicName, length)) {
+    return true;
+  }
+
   return false;
 }
 
