@@ -1451,7 +1451,7 @@ void setup() {
 #endif
 
   loggingSerial.println(F("Setup ModBusTCP Server.."));
-  modbusServer.setup();
+  modbusServer.setup(heishamonSettings.optionalPCB);
 
   loggingSerial.println(F("Setup MQTT..."));
   setupMqtt();
