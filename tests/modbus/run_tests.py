@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-OUT = ROOT / ".pio" / "modbus-tests"
+OUT = HERE / "build"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Only heat-pump decoding/command execution is stubbed. The register map, unit

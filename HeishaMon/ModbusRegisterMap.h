@@ -42,26 +42,86 @@ inline bool decodeRange(uint16_t address, uint16_t base, uint16_t count,
   return true;
 }
 
-struct OptionalCommand {
+// Modbus IDs are kept here, separate from the command tables in commands.h, so the
+// command parsing code does not need to know about Modbus. Commands are matched by
+// name, which keeps addresses stable even if the command table is reordered.
+struct MainCommand {
   uint16_t id;
   const char *name;
 };
 
-// Explicit IDs keep addresses stable even if upstream reorders its command table.
+constexpr MainCommand MAIN_COMMANDS[] = {
+  {1, "SetHeatpump"},
+  {2, "SetHolidayMode"},
+  {3, "SetQuietMode"},
+  {4, "SetPowerfulMode"},
+  {5, "SetZ1HeatRequestTemperature"},
+  {6, "SetZ1CoolRequestTemperature"},
+  {7, "SetZ2HeatRequestTemperature"},
+  {8, "SetZ2CoolRequestTemperature"},
+  {9, "SetOperationMode"},
+  {10, "SetForceDHW"},
+  {11, "SetDHWTemp"},
+  {12, "SetForceDefrost"},
+  {13, "SetForceSterilization"},
+  {14, "SetPump"},
+  {15, "SetMaxPumpDuty"},
+  {16, "SetCurves"},
+  {17, "SetZones"},
+  {18, "SetFloorHeatDelta"},
+  {19, "SetFloorCoolDelta"},
+  {20, "SetDHWHeatDelta"},
+  {21, "SetHeaterDelayTime"},
+  {22, "SetHeaterStartDelta"},
+  {23, "SetHeaterStopDelta"},
+  {24, "SetMainSchedule"},
+  {25, "SetAltExternalSensor"},
+  {26, "SetExternalPadHeater"},
+  {27, "SetBufferDelta"},
+  {28, "SetBuffer"},
+  {29, "SetHeatingOffOutdoorTemp"},
+  {30, "SetExternalControl"},
+  {31, "SetExternalError"},
+  {32, "SetExternalCompressorControl"},
+  {33, "SetExternalHeatCoolControl"},
+  {34, "SetBivalentControl"},
+  {35, "SetBivalentMode"},
+  {36, "SetBivalentStartTemp"},
+  {37, "SetBivalentAPStartTemp"},
+  {38, "SetBivalentAPStopTemp"},
+  {39, "SetForceHeater"},
+  {40, "SetHeatingControl"},
+  {41, "SetSmartDHW"},
+  {42, "SetQuietModePriority"},
+  {43, "SetPumpFlowrateMode"},
+  {44, "SetDHWSensorSelection"},
+  {45, "SetDHWHeaterState"},
+  {46, "SetRoomHeaterState"},
+  {47, "SetHeaterOnOutdoorTemp"},
+  {RESET_COMMAND_ID, "SetReset"},
+};
+
+struct OptionalCommand {
+  uint16_t id;
+  const char *name;
+  // Temperatures are written like they are read: as an int16 with two implied decimals (2150 = 21.50).
+  bool scale100;
+};
+
 constexpr OptionalCommand OPTIONAL_COMMANDS[] = {
-  {0, "SetHeatCoolMode"},
-  {1, "SetCompressorState"},
-  {2, "SetSmartGridMode"},
-  {3, "SetExternalThermostat1State"},
-  {4, "SetExternalThermostat2State"},
-  {5, "SetDemandControl"},
-  {6, "SetPoolTemp"},
-  {7, "SetBufferTemp"},
-  {8, "SetZ1RoomTemp"},
-  {9, "SetZ1WaterTemp"},
-  {10, "SetZ2RoomTemp"},
-  {11, "SetZ2WaterTemp"},
-  {12, "SetSolarTemp"},
-  {13, "SetOptPCBByte9"},
+  {0, "SetHeatCoolMode", false},
+  {1, "SetCompressorState", false},
+  {2, "SetSmartGridMode", false},
+  {3, "SetExternalThermostat1State", false},
+  {4, "SetExternalThermostat2State", false},
+  {5, "SetDemandControl", false},
+  {6, "SetPoolTemp", true},
+  {7, "SetBufferTemp", true},
+  {8, "SetZ1RoomTemp", true},
+  {9, "SetZ1WaterTemp", true},
+  {10, "SetZ2RoomTemp", true},
+  {11, "SetZ2WaterTemp", true},
+  {12, "SetSolarTemp", true},
+  {13, "SetOptPCBByte9", false},
 };
 }  // namespace ModbusMap

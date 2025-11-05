@@ -68,6 +68,8 @@ struct settingsStruct {
   bool hotspot = true; //enable wifi hotspot when wifi is not connected
 #ifdef ESP32
   bool proxy = true; //cztaw proxy port enable flag
+  bool modbus = false; //modbus tcp server enable flag
+  bool modbusWrites = false; //allow modbus clients to write commands and relays
 #endif
   s0SettingsStruct s0Settings[NUM_S0_COUNTERS];
   gpioSettingsStruct gpioSettings;

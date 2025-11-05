@@ -3,8 +3,10 @@
 #include <map>
 #include <vector>
 
+constexpr uint8_t ILLEGAL_FUNCTION = 1;
 constexpr uint8_t ILLEGAL_DATA_ADDRESS = 2;
 constexpr uint8_t ILLEGAL_DATA_VALUE = 3;
+constexpr uint8_t SERVER_DEVICE_BUSY = 6;
 constexpr uint8_t READ_HOLD_REGISTER = 3;
 constexpr uint8_t WRITE_COIL = 5;
 constexpr uint8_t WRITE_HOLD_REGISTER = 6;

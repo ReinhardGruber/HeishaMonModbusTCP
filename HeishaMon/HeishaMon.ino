@@ -49,7 +49,6 @@
 
 DNSServer dnsServer;
 
-
 //to read bus voltage in stats
 #ifdef ESP8266
 ADC_MODE(ADC_VCC);
@@ -144,8 +143,9 @@ static uint8_t cmdstart = 0;
 static uint8_t cmdend = 0;
 static uint8_t cmdnrel = 0;
 
-// HeishaModBusServer instance
-HeishaModBusServer modbusServer;
+#ifdef ESP32
+HeishaModbusServer modbusServer;
+#endif
 
 // mqtt
 #ifdef TLS_SUPPORT
@@ -1885,8 +1885,12 @@ void setup() {
   setupETH();
 #endif
 
-  loggingSerial.println(F("Setup ModBusTCP Server.."));
-  modbusServer.setup(heishamonSettings.optionalPCB, heishamonSettings.use_s0);
+#ifdef ESP32
+  if (heishamonSettings.modbus) {
+    loggingSerial.println(F("Setup Modbus TCP server.."));
+    modbusServer.setup(heishamonSettings.optionalPCB, heishamonSettings.use_s0, heishamonSettings.modbusWrites);
+  }
+#endif
 
   loggingSerial.println(F("Setup HTTP..."));
   setupHttp();
@@ -1927,8 +1931,6 @@ void setup() {
     digitalWrite(ENABLEOTPIN, HIGH);
     #endif
     HeishaOTSetup();
-
-
   }
 
   loggingSerial.println(F("Enabling rules.."));
@@ -2033,7 +2035,9 @@ void loop() {
   // Handle OTA first.s
   ArduinoOTA.handle();
 
-  modbusServer.loop(heishamonSettings.use_s0);
+#ifdef ESP32
+  if (heishamonSettings.modbus) modbusServer.loop(heishamonSettings.use_s0, extraDataBlockAvailable);
+#endif
 
   mqtt_client.loop();
 

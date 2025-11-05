@@ -19,12 +19,12 @@ static const char webCSS[] FLASHPROG = R"====(
   --bg-elevated:#f1f3f5;
   --bg-hover:#e9ecef;
   --border:#dee2e6;
-  --border-focus:#368DF4;
+  --border-focus:#3a7bd5;
   --text-primary:#212529;
   --text-secondary:#495057;
   --text-muted:#6c757d;
-  --accent:#368DF4;
-  --accent-glow:rgba(54,141,244,0.15);
+  --accent:#3a7bd5;
+  --accent-glow:rgba(58,123,213,0.15);
   --accent-hover:#5a9be8;
   --red:#dc3545;
   --red-glow:rgba(220,53,69,0.15);
@@ -45,12 +45,12 @@ html.dark-mode {
   --bg-elevated:#1e2230;
   --bg-hover:#262b3a;
   --border:#2a3040;
-  --border-focus:#368DF4;
+  --border-focus:#3a7bd5;
   --text-primary:#eef0f4;
   --text-secondary:#7b8597;
   --text-muted:#7b8597;
-  --accent:#368DF4;
-  --accent-glow:rgba(54,141,244,0.25);
+  --accent:#3a7bd5;
+  --accent-glow:rgba(58,123,213,0.25);
   --accent-hover:#5a9be8;
   --red:#e74c5e;
   --red-glow:rgba(231,76,94,0.25);
@@ -92,6 +92,7 @@ body{
   letter-spacing:-0.5px;
   text-decoration:none;
 }
+.topbar-logo span{color:var(--text-secondary);font-weight:400}
 .hamburger{
   background:none;border:none;
   color:var(--text-secondary);
@@ -137,7 +138,6 @@ body{
 .sidemenu-nav a:hover{background:var(--bg-elevated);color:var(--text-primary)}
 .sidemenu-nav a.danger{color:var(--red)}
 .sidemenu-nav a.danger:hover{background:var(--red-glow)}
-.sidemenu-nav a[aria-current="page"]{color:var(--accent);background:var(--accent-glow)}
 .sidemenu-nav .nav-icon{width:16px;text-align:center;opacity:.7}
 .sidemenu-footer{
   padding:16px 20px;
@@ -197,7 +197,7 @@ body{
 .status-chip.rules-inactive .chip-value {color:#9e9e9e;font-weight:500;}
 .status-dot{width:8px;height:8px;border-radius:50%;margin-right:8px;transition:background 0.3s;}
 .status-dot.excellent{background:#2ecc94;}
-.status-dot.good{background:#368DF4;}
+.status-dot.good{background:#3a7bd5;}
 .status-dot.fair{background:#f0a500;}
 .status-dot.poor{background:#e74c5e;}
 .status-dot.disconnected{background:#6b7280;}
@@ -228,9 +228,6 @@ thead th{
   border-bottom:1px solid var(--border);
   position:sticky;top:56px;
 }
-/* Modbus tables scroll inside their own containers, below the page header. */
-.modbus-page thead th{top:0}
-
 tbody tr{
   border-bottom:1px solid rgba(42,48,64,.5);
   transition:background .15s;
@@ -442,8 +439,8 @@ select.setting-input{appearance:auto}
 }
 .firmware-warning strong{color:var(--text-primary)}
 .firmware-info{
-  background:rgba(54,141,244,.08);
-  border:1px solid rgba(54,141,244,.25);
+  background:rgba(58,123,213,.08);
+  border:1px solid rgba(58,123,213,.25);
   border-radius:var(--radius);
   padding:16px 20px;
   font-size:12.5px;
@@ -469,7 +466,7 @@ progress::-webkit-progress-value{background:var(--accent);border-radius:3px;tran
   font-family:'Sora',sans-serif;
 }
 .rules-editor{background:#0f1117;color:#e4e7eb;padding:12px;border:1px solid #2d3748;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.5;min-height:400px;white-space:pre;overflow:auto;}
-.rules-editor:focus{outline:none;border-color:#368DF4;}
+.rules-editor:focus{outline:none;border-color:#3a7bd5;}
 .keyword{color:#c792ea;}
 .operator{color:#89ddff;}
 .number{color:#f78c6c;}
@@ -630,7 +627,7 @@ static const char webHeader[] FLASHPROG = R"====(
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Heisha Monitor with Modbus TCP</title>
+<title>Heisha Monitor</title>
 <script>
 (function(){
   function getCookie(name){
@@ -696,7 +693,7 @@ html.dark-mode-loading progress::-webkit-progress-bar {
   background:#1e2230 !important;
 }
 html.dark-mode-loading progress::-webkit-progress-value {
-  background:#368DF4 !important;
+  background:#3a7bd5 !important;
 }
 html.dark-mode-loading .panel-header {
   border-color:#2a3040 !important;
@@ -733,18 +730,7 @@ static const char webBodyStart[] FLASHPROG = R"====(
     </label>
   </div>
   
-  <nav class='sidemenu-nav' id='sideNav'>
-    <a href="/"><span class="nav-icon" aria-hidden="true">&#8962;</span> Home</a>
-    <a href="/firmware"><span class="nav-icon" aria-hidden="true">&#8679;</span> Firmware</a>
-    <a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon" aria-hidden="true">&#8635;</span> Reboot</a>
-    <a href="/rules"><span class="nav-icon" aria-hidden="true">&#8881;</span> Rules</a>
-    <a href="/settings"><span class="nav-icon" aria-hidden="true">&#9881;</span> Settings</a>
-)===="
-#ifdef ESP32
-R"====(    <a href="/modbus"><span class="nav-icon" aria-hidden="true">&#9432;</span> Modbus registers</a>
-)===="
-#endif
-R"====(  </nav>
+  <nav class='sidemenu-nav' id='sideNav'></nav>
   <div class='sidemenu-footer'>
     <a href='https://github.com/heishamon/HeishaMon' target='_blank'>GitHub</a>
   </div>
@@ -752,7 +738,7 @@ R"====(  </nav>
 <header class='topbar'>
   <div class='topbar-left'>
     <button class='hamburger' onclick='toggleMenu()'>&#9776;</button>
-    <a class='topbar-logo' href='/'>HeishaMon ModBus TCP</a>
+    <a class='topbar-logo' href='/'>Heisha<span>Mon</span></a>
   </div>
   <div class='topbar-right'></div>
 </header>
@@ -765,13 +751,6 @@ static const char webFooter[] FLASHPROG = "</body></html>";
 // ─────────────────────────────────────────────────────────────────────────────
 static const char menuJS[] FLASHPROG = R"====(
 <script>
-document.addEventListener('DOMContentLoaded', function(){
-  document.querySelectorAll('#sideNav a').forEach(function(link){
-    if (link.getAttribute('href') === window.location.pathname) {
-      link.setAttribute('aria-current', 'page');
-    }
-  });
-});
 function toggleMenu(){
   var m=document.getElementById('sideMenu');
   var o=document.getElementById('menuOverlay');
@@ -1260,8 +1239,24 @@ document.addEventListener('DOMContentLoaded', function() {
 // Side nav links for root page (injected via JS on load below)
 // We build the nav + status bar in one block, then the tab panes.
 
-// Status bar for root page
+// Side nav links and status bar for root page
 static const char webBodyRoot1[] FLASHPROG = R"====(
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var nav=document.getElementById('sideNav');
+  nav.innerHTML=`
+<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
+<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
+<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
+<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
+)===="
+#ifdef ESP32
+R"====(<a href="/modbus"><span class="nav-icon">&#9432;</span> Modbus</a>
+)===="
+#endif
+R"====(`;
+});
+</script>
 <div class='main-content'>
 <div class='statusbar' id='statusBar'>
   <div class='status-chip'><span class='status-dot'></span><span class='chip-label'>WiFi</span><span class='chip-value' id='wifi'>—</span><span style='color:var(--text-muted);font-size:11px'>%</span></div>
@@ -1448,7 +1443,19 @@ static const char caUploadJS[] PROGMEM = R"====(
 )====";
 #endif
 
-static const char webBodySettings1[] FLASHPROG = "";
+static const char webBodySettings1[] FLASHPROG = R"====(
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var nav=document.getElementById('sideNav');
+  nav.innerHTML=`
+<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
+<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
+<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
+<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
+`;
+});
+</script>
+)====";
 
 static const char settingsForm1[] FLASHPROG = R"====(
 <div class='main-content' style='max-width:780px;margin:0 auto'>
@@ -1706,6 +1713,12 @@ static const char settingsForm2[] FLASHPROG = R"====(
     <div class='setting-row'><label class='setting-label'>Force rules on boot</label><div class='checkbox-wrap'><input type='checkbox' name='force_rules' value='enabled'></div></div>
   </div></div>
   <div class='panel' style='margin-bottom:16px'>
+  <div class='panel-header'><h3>Modbus TCP</h3></div>
+  <div class='settings-grid'>
+    <div class='setting-row'><label class='setting-label'>Enable Modbus TCP server (port 502)</label><div style='display:flex;align-items:center;gap:10px'><div class='checkbox-wrap'><input type='checkbox' name='modbus' value='enabled'></div><span class='setting-hint' style='display:block;margin-top:4px'>No authentication, so only enable on a trusted network. Reboot required.</span></div></div>
+    <div class='setting-row'><label class='setting-label'>Allow Modbus writes</label><div style='display:flex;align-items:center;gap:10px'><div class='checkbox-wrap'><input type='checkbox' name='modbusWrites' value='enabled'></div><span class='setting-hint' style='display:block;margin-top:4px'>Lets Modbus clients send heat pump commands (including SetReset) and switch the relays.</span></div></div>
+  </div></div>
+  <div class='panel' style='margin-bottom:16px'>
   <div class='panel-header'><h3>Listen Only</h3></div>
   <div class='settings-grid'>
     <div class='setting-row'><label class='setting-label'>Listen only (parallel CZ-TAW1)</label><div class='checkbox-wrap'><input type='checkbox' name='listenonly' value='enabled'></div></div>
@@ -1862,6 +1875,17 @@ setTimeout(refreshWifiScan,500);
 // RULES PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 static const char showRulesPage1[] FLASHPROG = R"====(
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var nav=document.getElementById('sideNav');
+  nav.innerHTML=`
+<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
+<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
+<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
+<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
+`;
+});
+</script>
   <div style='display:flex;'>
     <div id='line-numbers' class='line-numbers'></div>
     <div id='rules' contenteditable='true' spellcheck='false' class='rules-editor'>)====";
@@ -1871,7 +1895,7 @@ static const char showRulesPage1[] FLASHPROG = R"====(
 static const char showRulesPage2[] FLASHPROG = R"====(</div>
   </div>
   <div style='margin-top:12px;'>
-    <button type='button' onclick='validateRules()' style='background:#368DF4;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;margin-right:8px;'>Validate</button>
+    <button type='button' onclick='validateRules()' style='background:#3a7bd5;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;margin-right:8px;'>Validate</button>
     <button type='button' onclick='saveRules()' style='background:#2ecc94;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;'>Save Rules</button>
     <button type='button' onclick="clearRules()" style='background:#f44336;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;'>Erase Rules</button>
   </div>
@@ -2310,6 +2334,17 @@ function getCursorPosition() {
 // FIRMWARE PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 static const char showFirmwarePage[] FLASHPROG = R"====(
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var nav=document.getElementById('sideNav');
+  nav.innerHTML=`
+<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
+<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
+<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
+<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
+`;
+});
+</script>
 <script>
 function getMD5(){
   var fn=document.getElementById('firmware').value;
@@ -3365,6 +3400,22 @@ static const char tzDataOptions[] FLASHPROG = R"====(
 
 #ifdef ESP32
 static const char webModbusStart[] FLASHPROG = R"====(
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var nav=document.getElementById('sideNav');
+  nav.innerHTML=`
+<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
+<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
+<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
+<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
+<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
+`;
+});
+</script>
+<style>
+/* Modbus tables scroll inside their own containers, below the page header. */
+.modbus-page thead th{top:0}
+</style>
 <main class='main-content modbus-page'>
   <h1 style='color:var(--accent);margin-bottom:16px'><span aria-hidden='true'>&#9432;</span> Modbus registers</h1>
   <p>TCP port <strong>502</strong> &middot; Unit ID <strong>1</strong> &middot;
@@ -3373,8 +3424,8 @@ static const char webModbusStart[] FLASHPROG = R"====(
   <p style='margin:12px 0'>Read values with FC03. Integer values are signed 16-bit.
      Floats are IEEE 754 float32: read <strong>both registers</strong>, high word first (MSW / LSW), without scaling.
      For integer values marked x100, divide by 100: 2050 means 20.50.</p>
-  <p style='margin:16px 0;color:var(--accent)'><strong>Register map v2 - migration required.</strong>
-     Read register 9000 to check the map version (value 2). Update existing PLC/Loxone mappings before using this firmware.</p>
+  <p style='margin:16px 0'>The Modbus TCP server must be enabled in Settings. Writes (FC05 / FC06) additionally require
+     <strong>Allow Modbus writes</strong>. Read register 9000 to check the register map version (currently 2).</p>
   <details style='margin:16px 0' open><summary>Fixed blocks with room to grow</summary>
     <p>Each measurement group reserves 1,000 topics. Unused addresses are reserved and cannot be read yet.</p>
     <div style='overflow-x:auto'><table>

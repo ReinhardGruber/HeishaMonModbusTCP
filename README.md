@@ -1,58 +1,3 @@
-## HeishaMon – Modbus-Enabled Fork
-
-This project is a fork of the original [Egyras/HeishaMon](https://github.com/Egyras/HeishaMon), extended with **Modbus** integration for **low-level PLC/SCADA control** of Panasonic *Aquarea / Heisha / Jeisha / Meisha* heat pumps.
-
-### Why this fork?
-- Native **Modbus/TCP** access to Heisha telemetry and settings
-- Built for **industrial PLCs** and **home/Building automation**
-- Stable, low-latency interface for automation tasks
-
-### Key features
-- **Modbus server** exposing live metrics and writable settings  
-  (temps, states, duty cycles, modes, setpoints, etc.)
-- Readable & writable registers with **bounds checking**
-- Deterministic polling/update cycle suitable for PLC logic
-- Both S0 inputs available over Modbus: power, total/interval energy and pulse diagnostics
-  (integer blocks 3000/3100, float blocks 16000/16200; enable S0 in Settings).
-
-### Works with (tested/targeted)
-- **Siemens LOGO!** (8.x) via Modbus/TCP (client)
-- **Eaton easyE4** via Modbus/TCP (client)
-- **Loxone** (Modbus TCP client or Modbus Extension via gateway)
-- Generic SCADA/HMI tools (e.g., QModMaster, Kepware, Node-RED Modbus)
-
-### Quick start
-1. Flash firmware and set network (static IP recommended).
-2. Point your PLC/BCU/SCADA Modbus **client** to `HOST:PORT` (default port in firmware).
-3. Read a few safe **holding/input registers** (e.g., supply/return temps) to verify.
-4. Enable writes (if required), then test with a **non-critical** setpoint first.
-
-### Safety
-- Keep write access **disabled** until your logic is proven.
-- Validate ranges in the PLC and ramp conservatively.
-- Start read-only monitoring in production, then enable writes.
-
-### Documentation
-- **Register map:** [Modbus Register Mapping](Modbus-Register-Mapping.md)
-- Upstream project: [Egyras/HeishaMon](https://github.com/Egyras/HeishaMon)
-
-### ErrorState Modbus encoding
-- Error codes that arrive as strings with an uppercase prefix and number (e.g., `H74`) are mapped into distinct Modbus register values.
-- The prefix selects a **1000-block offset** (`A` → `1000`, `B` → `2000`, …) that is added to the numeric part, keeping prefixed codes separate from plain numbers when read over Modbus.
-
----
-
-> If you find a mismatch between firmware fields and the Modbus map, open an issue with device model, firmware version, and a short capture.
-
-
-## Upstream 4.2.2
-
-This fork includes upstream release 4.2.2 (`0de4f3c`) and identifies itself as **4.2.2-ModbusTCP**. The web interface retains the fork blue (`#368DF4`) in light and dark modes. Modbus register map **v2** uses fixed, expandable blocks. **Existing PLC/Loxone mappings must be updated**; old register addresses are not compatibility aliases. Open **Modbus registers** in the device menu (`/modbus`) or see the [register map and migration guide](Modbus-Register-Mapping.md). Read register `9000` to identify map version `2`.
-
-The firmware files under `binaries/` imported from upstream are upstream builds without Modbus TCP. Build this fork or use a release explicitly marked ModbusTCP.
-
-## Upstream documentation
-
 [![Join us on Slack chat room](https://img.shields.io/badge/Slack-Join%20the%20chat%20room-orange)](https://join.slack.com/t/panasonic-wemos/shared_invite/enQtODg2MDY0NjE1OTI3LTgzYjkwMzIwNTAwZTMyYzgwNDQ1Y2QxYjkwODg3NjMyN2MyM2ViMDM3Yjc3OGE3MGRiY2FkYzI4MzZiZDVkNGE)
 [![Build binary](https://github.com/the78mole/HeishaMon/actions/workflows/main.yml/badge.svg)](https://github.com/the78mole/HeishaMon/actions/workflows/main.yml)
 
@@ -423,6 +368,9 @@ The software also supports ds18b20 1-wire temperature sensors reading. A proper 
 
 ## Large board relay control
 The newer, large, heishamon contains two onboard relays which can be switched on and off using MQTT commands. The relays can be used for any contact switching, even 230V mains (max 5A). For example to switch the 230V contacts in the heatpump for controlling the 'external thermostat', switching a pump on or off or other lower power devices. I do not recommend to use the relay as a switch for a electric heater as they use too much power. To control the relay just send a value of 1 or 0 to the MQTT topic "panasonic_heat_pump/gpio/relay/one" for relay one or "panasonic_heat_pump/gpio/relay/two" for relay two.
+
+## Modbus TCP support
+The large (ESP32-S3) heishamon can act as a Modbus TCP server (port 502, unit ID 1) so PLCs and building automation systems such as Loxone can read the heat pump values with FC03 and, optionally, send commands with FC06 and switch the relays with FC05. Modbus has no authentication, so it is disabled by default. Enable it in settings under 'Enable Modbus TCP server' and only additionally enable 'Allow Modbus writes' if you want to be able to control the heat pump over Modbus. Both need a reboot to take effect. The register map is documented in [Modbus register mapping](Modbus-Register-Mapping.md) and is also available on the device on the 'Modbus' page. A Loxone template is available in the [Integrations/Loxone](Integrations/Loxone) directory.
 
 ## Opentherm support
 If your heishamon board supports opentherm the software can also be used to bridge opentherm information from a compatible thermostat to your home automation over MQTT or JSON and as mentioned above it can also be connected directly in the rules to connect opentherm information to the heatpump and back, for example to display the outside temperature from the heatpump on your opentherm thermostat. If you enable opentherm support in settings there will be a new tab visible in the web page. On that tab you will see opentherm values. Some are of type R(ead) and some are W(rite), and some are both. Read means that the thermostat can read that information from the heishamon. You provide that information over MQTT (or using the rules) by updating this value on the mqtt 'opentherm/read' topic, for example 'panasonic_heat_pump/opentherm/read/outsideTemp'. The write values are information from the thermostat, like 'roomTemp'. These are available on mqtt topic 'opentherm/write'. You can use these values to change the heatpump behaviour in anyway you want using your home automation and mqtt set-commands to heishamon on using the internal rules.

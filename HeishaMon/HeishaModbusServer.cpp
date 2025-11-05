@@ -6,6 +6,7 @@
 #include "commands.h"
 #include "s0data.h"
 #include <atomic>
+#include <mutex>
 
 #include <ctype.h>
 #include <math.h>
@@ -50,15 +51,34 @@ constexpr size_t arraySize(const T (&)[N]) {
   return N;
 }
 
+static_assert(arraySize(MAIN_COMMANDS) == arraySize(commands),
+              "Assign permanent Modbus IDs to new commands in ModbusRegisterMap.h");
 static_assert(arraySize(OPTIONAL_COMMANDS) == arraySize(optionalCommands),
-              "Assign permanent Modbus IDs to new optional commands");
+              "Assign permanent Modbus IDs to new optional commands in ModbusRegisterMap.h");
 
-bool nonNumericMainReported[NUMBER_OF_TOPICS] = { false };
-bool nonNumericExtraReported[NUMBER_OF_TOPICS_EXTRA] = { false };
-bool nonNumericOptReported[NUMBER_OF_OPT_TOPICS] = { false };
+// The Modbus callbacks run in the AsyncTCP task. Everything they share with the main
+// loop lives below and is only accessed while holding stateMutex.
+std::mutex stateMutex;
+char snapshotMain[DATASIZE] = { 0 };
+char snapshotExtra[DATASIZE] = { 0 };
+char snapshotOpt[OPTDATASIZE] = { 0 };
+bool snapshotExtraAvailable = false;
 
+struct WriteRequest {
+  bool coil;
+  uint16_t address;
+  uint16_t value;
+};
+
+constexpr size_t WRITE_QUEUE_SIZE = 16;
+WriteRequest writeQueue[WRITE_QUEUE_SIZE];
+size_t writeQueueHead = 0;
+size_t writeQueueCount = 0;
+
+// Set once in setup() before the server accepts connections.
 bool optionalPCB = false;
 std::atomic<bool> s0Enabled{false};
+std::atomic<bool> writesAllowed{false};
 
 static_assert(NUM_S0_COUNTERS * S0_PORT_STRIDE <= TOPIC_CAPACITY, "S0 Modbus block is full");
 static_assert(S0_FIELD_COUNT <= S0_PORT_STRIDE, "S0 port block is full");
@@ -112,7 +132,9 @@ bool s0ToRegisterValue(uint16_t address, const S0Reading readings[NUM_S0_COUNTER
 enum class CommandWriteResult {
   Success,
   InvalidAddress,
-  UnsupportedValue
+  UnsupportedValue,
+  Unavailable,
+  Busy
 };
 
 bool isNumericValue(const String &value) {
@@ -186,13 +208,13 @@ bool isErrorState(const String &value, uint16_t &registerValue) {
   return true;
 }
 
-bool stringToRegisterValue(const String &value, uint16_t &registerValue, TopicSource source, uint16_t topicIndex) {
+// Non-numeric values that are not error codes read as 0.
+void stringToRegisterValue(const String &value, uint16_t &registerValue, TopicSource source, uint16_t topicIndex) {
   if (!isNumericValue(value)) {
     if (!isErrorState(value, registerValue)) {
       registerValue = 0;
-      return false;
     }
-    return true;
+    return;
   }
   if (isTopicScale100(source, topicIndex)) {
     float fValue = value.toFloat();
@@ -215,7 +237,6 @@ bool stringToRegisterValue(const String &value, uint16_t &registerValue, TopicSo
     }
     registerValue = static_cast<uint16_t>(static_cast<int16_t>(intValue));
   }
-  return true;
 }
 
 bool decodeTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIndex) {
@@ -229,37 +250,31 @@ bool decodeTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIn
   return false;
 }
 
+// Must be called with stateMutex held. Returns false when the topic does not exist or
+// the data behind it is not available on this heat pump / configuration, so that the
+// caller answers with an exception instead of a value decoded from an empty buffer.
 bool fetchTopicString(TopicSource source, uint16_t topicIndex, String &value) {
   switch (source) {
     case TopicSource::Main:
       if (topicIndex >= NUMBER_OF_TOPICS) {
         return false;
       }
-      value = getDataValue(actData, topicIndex);
+      value = getDataValue(snapshotMain, topicIndex);
       return true;
     case TopicSource::Extra:
-      if (topicIndex >= NUMBER_OF_TOPICS_EXTRA) {
+      if (topicIndex >= NUMBER_OF_TOPICS_EXTRA || !snapshotExtraAvailable) {
         return false;
       }
-      value = getDataValueExtra(actDataExtra, topicIndex);
+      value = getDataValueExtra(snapshotExtra, topicIndex);
       return true;
     case TopicSource::Optional:
-      if (topicIndex >= NUMBER_OF_OPT_TOPICS) {
+      if (topicIndex >= NUMBER_OF_OPT_TOPICS || !optionalPCB) {
         return false;
       }
-      value = getOptDataValue(actOptData, topicIndex);
+      value = getOptDataValue(snapshotOpt, topicIndex);
       return true;
   }
   return false;
-}
-
-bool fetchTopicString(uint16_t address, String &value) {
-  TopicSource source;
-  uint16_t topicIndex = 0;
-  if (!decodeTopicAddress(address, source, topicIndex)) {
-    return false;
-  }
-  return fetchTopicString(source, topicIndex, value);
 }
 
 bool decodeFloatTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIndex, bool &highWord) {
@@ -272,55 +287,16 @@ bool decodeFloatTopicAddress(uint16_t address, TopicSource &source, uint16_t &to
   return false;
 }
 
-bool stringToFloatWords(const String &value, uint16_t &msw, uint16_t &lsw) {
-  if (!isNumericValue(value)) {
-    msw = 0;
-    lsw = 0;
-    return false;
+void stringToFloatWords(const String &value, uint16_t &msw, uint16_t &lsw) {
+  float fValue = 0;
+  if (isNumericValue(value)) {
+    fValue = value.toFloat();
   }
-  float fValue = value.toFloat();
   uint32_t raw = 0;
   static_assert(sizeof(float) == sizeof(uint32_t), "Unexpected float size");
   memcpy(&raw, &fValue, sizeof(raw));
   msw = static_cast<uint16_t>(raw >> 16);
   lsw = static_cast<uint16_t>(raw & 0xFFFF);
-  return true;
-}
-
-bool shouldLogNonNumeric(TopicSource source, uint16_t topicIndex) {
-  switch (source) {
-    case TopicSource::Main:
-      if (topicIndex < arraySize(nonNumericMainReported)) {
-        bool shouldLog = !nonNumericMainReported[topicIndex];
-        nonNumericMainReported[topicIndex] = true;
-        return shouldLog;
-      }
-      break;
-    case TopicSource::Extra:
-      if (topicIndex < arraySize(nonNumericExtraReported)) {
-        bool shouldLog = !nonNumericExtraReported[topicIndex];
-        nonNumericExtraReported[topicIndex] = true;
-        return shouldLog;
-      }
-      break;
-    case TopicSource::Optional:
-      if (topicIndex < arraySize(nonNumericOptReported)) {
-        bool shouldLog = !nonNumericOptReported[topicIndex];
-        nonNumericOptReported[topicIndex] = true;
-        return shouldLog;
-      }
-      break;
-  }
-  return false;
-}
-
-void logNonNumericTopicValue(TopicSource source, uint16_t topicIndex, uint16_t address, const String &topicValue) {
-  if (!shouldLogNonNumeric(source, topicIndex)) {
-    return;
-  }
-  char logMsg[128];
-  snprintf_P(logMsg, sizeof(logMsg), PSTR("Modbus: non-numeric topic value for register %u: %s"), address, topicValue.c_str());
-  log_message(logMsg);
 }
 
 bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
@@ -335,10 +311,7 @@ bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
     return false;
   }
 
-  if (!stringToRegisterValue(topicValue, registerValue, source, topicIndex)) {
-    logNonNumericTopicValue(source, topicIndex, address, topicValue);
-  }
-
+  stringToRegisterValue(topicValue, registerValue, source, topicIndex);
   return true;
 }
 
@@ -357,53 +330,30 @@ bool topicToFloatRegisterValue(uint16_t address, uint16_t &registerValue) {
 
   uint16_t msw = 0;
   uint16_t lsw = 0;
-  if (!stringToFloatWords(topicValue, msw, lsw)) {
-    logNonNumericTopicValue(source, topicIndex, address, topicValue);
-  }
+  stringToFloatWords(topicValue, msw, lsw);
   registerValue = highWord ? msw : lsw;
   return true;
 }
 
-bool copyMainCommandTopic(uint16_t address, char *topicName, size_t length) {
-  if (length == 0) {
-    return false;
-  }
+struct CommandTarget {
+  const char *name;
+  bool optional;
+  bool scale100;
+};
 
-  for (size_t i = 0; i < arraySize(commands); ++i) {
-    cmdStruct cmd;
-    memcpy_P(&cmd, &commands[i], sizeof(cmd));
-    if (commandAddress(cmd.id) == address) {
-      strncpy(topicName, cmd.name, length);
-      topicName[length - 1] = '\0';
+bool resolveCommand(uint16_t address, CommandTarget &target) {
+  for (const MainCommand &command : MAIN_COMMANDS) {
+    if (commandAddress(command.id) == address) {
+      target = { command.name, false, false };
       return true;
     }
   }
-  return false;
-}
-
-bool copyOptionalCommandTopic(uint16_t address, char *topicName, size_t length) {
-  if (length == 0) {
-    return false;
-  }
-
   for (const OptionalCommand &command : OPTIONAL_COMMANDS) {
     if (address == OPTIONAL_COMMAND_BASE + command.id) {
-      strncpy(topicName, command.name, length);
-      topicName[length - 1] = '\0';
+      target = { command.name, true, command.scale100 };
       return true;
     }
   }
-  return false;
-}
-
-bool getCommandTopic(uint16_t address, char *topicName, size_t length) {
-  if (copyMainCommandTopic(address, topicName, length)) {
-    return true;
-  }
-  else if (copyOptionalCommandTopic(address, topicName, length)) {
-    return true;
-  }
-
   return false;
 }
 
@@ -411,27 +361,78 @@ bool isJsonCommand(const char *commandTopic) {
   return strcmp(commandTopic, "SetCurves") == 0;
 }
 
+bool enqueueWrite(const WriteRequest &request) {
+  std::lock_guard<std::mutex> lock(stateMutex);
+  if (writeQueueCount >= WRITE_QUEUE_SIZE) {
+    return false;
+  }
+  writeQueue[(writeQueueHead + writeQueueCount) % WRITE_QUEUE_SIZE] = request;
+  ++writeQueueCount;
+  return true;
+}
+
+bool dequeueWrite(WriteRequest &request) {
+  std::lock_guard<std::mutex> lock(stateMutex);
+  if (writeQueueCount == 0) {
+    return false;
+  }
+  request = writeQueue[writeQueueHead];
+  writeQueueHead = (writeQueueHead + 1) % WRITE_QUEUE_SIZE;
+  --writeQueueCount;
+  return true;
+}
+
+// Runs in the async task: only validates and queues, the command is executed by loop().
 CommandWriteResult handleWriteCommand(uint16_t address, uint16_t registerValue) {
-  char topicName[32] = { 0 };
-  if (!getCommandTopic(address, topicName, sizeof(topicName))) {
+  CommandTarget target;
+  if (!resolveCommand(address, target)) {
     return CommandWriteResult::InvalidAddress;
   }
 
-  if (isJsonCommand(topicName)) {
+  if (isJsonCommand(target.name)) {
     return CommandWriteResult::UnsupportedValue;
   }
 
+  // send_heatpump_command() silently ignores optional PCB commands when the PCB is disabled.
+  if (target.optional && !optionalPCB) {
+    return CommandWriteResult::Unavailable;
+  }
+
+  return enqueueWrite({ false, address, registerValue }) ? CommandWriteResult::Success : CommandWriteResult::Busy;
+}
+
+// Runs in loop().
+void executeWrite(const WriteRequest &request) {
+  if (request.coil) {
+    if (request.address == 0) setRelay1(request.value == 0xFF00);
+    else setRelay2(request.value == 0xFF00);
+    return;
+  }
+
+  CommandTarget target;
+  if (!resolveCommand(request.address, target)) {
+    return;
+  }
+
+  char topicName[32] = { 0 };
+  strncpy(topicName, target.name, sizeof(topicName) - 1);
+
   char payload[16];
-  snprintf(payload, sizeof(payload), "%d", static_cast<int16_t>(registerValue));
+  const int value = static_cast<int16_t>(request.value);
+  if (target.scale100) {
+    const int magnitude = value < 0 ? -value : value;
+    snprintf(payload, sizeof(payload), "%s%d.%02d", value < 0 ? "-" : "", magnitude / 100, magnitude % 100);
+  } else {
+    snprintf(payload, sizeof(payload), "%d", value);
+  }
   send_heatpump_command(topicName, payload, send_command, log_message, optionalPCB);
-  return CommandWriteResult::Success;
 }
 
 }  // namespace
 
 // Render from the same ranges and command tables used by Modbus itself.
 // One row per callback keeps the HTTP response bounded on the device.
-bool HeishaModBusServer::registerRow(uint16_t index, String &html) {
+bool HeishaModbusServer::registerRow(uint16_t index, String &html) {
   for (const TopicRange &range : kTopicRanges) {
     if (index >= range.count) {
       index -= range.count;
@@ -463,9 +464,9 @@ bool HeishaModBusServer::registerRow(uint16_t index, String &html) {
       html += "; errors: letter block + code (H74 = 8074); float returns 0 for text";
     }
     if (range.source == TopicSource::Optional) {
-      html += optionalPCB ? "; optional PCB enabled" : "; optional PCB disabled";
+      html += optionalPCB ? "; optional PCB enabled" : "; optional PCB disabled: illegal data address";
     } else if (range.source == TopicSource::Extra) {
-      html += "; requires extra heat-pump data";
+      html += "; requires extra heat-pump data: illegal data address if not available";
     }
     html += "</td></tr>";
     return true;
@@ -495,19 +496,19 @@ bool HeishaModBusServer::registerRow(uint16_t index, String &html) {
     return true;
   }
   index -= NUM_S0_COUNTERS * S0_FIELD_COUNT;
-  char name[32] = {0};
+  const char *name;
   uint16_t address;
   bool optional = false;
-  if (index < arraySize(commands)) {
-    cmdStruct command;
-    memcpy_P(&command, &commands[index], sizeof(command));
-    address = commandAddress(command.id);
-    strncpy(name, command.name, sizeof(name) - 1);
+  bool scale100 = false;
+  if (index < arraySize(MAIN_COMMANDS)) {
+    address = commandAddress(MAIN_COMMANDS[index].id);
+    name = MAIN_COMMANDS[index].name;
   } else {
-    index -= arraySize(commands);
+    index -= arraySize(MAIN_COMMANDS);
     if (index < arraySize(OPTIONAL_COMMANDS)) {
       address = OPTIONAL_COMMAND_BASE + OPTIONAL_COMMANDS[index].id;
-      copyOptionalCommandTopic(address, name, sizeof(name));
+      name = OPTIONAL_COMMANDS[index].name;
+      scale100 = OPTIONAL_COMMANDS[index].scale100;
       optional = true;
     } else {
       index -= arraySize(OPTIONAL_COMMANDS);
@@ -539,14 +540,20 @@ bool HeishaModBusServer::registerRow(uint16_t index, String &html) {
   html += "</td><td>-</td><td>";
   html += isJsonCommand(name) ? "Unsupported" : "Write / FC06";
   html += "</td><td>";
-  html += isJsonCommand(name) ? "JSON command; use MQTT or HTTP" : "Signed int16; x1 (no temperature scaling for commands)";
-  if (optional && !optionalPCB) html += "; optional PCB disabled";
+  if (isJsonCommand(name)) {
+    html += "JSON command; use MQTT or HTTP";
+  } else if (scale100) {
+    html += "Signed int16; x100 like the temperature readings (2150 = 21.50)";
+  } else {
+    html += "Signed int16; x1";
+  }
+  if (optional && !optionalPCB) html += "; optional PCB disabled: illegal data address";
   html += "</td></tr>";
   return true;
 }
 
 // FC 0x03: Read Holding Registers
-ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
+ModbusMessage HeishaModbusServer::FC_03(ModbusMessage request) {
   ModbusMessage response;
   uint16_t addr = 0;
   uint16_t words = 0;
@@ -574,6 +581,9 @@ ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
     }
   }
 
+  // Serve the whole request from one consistent snapshot of the heat pump data.
+  std::lock_guard<std::mutex> lock(stateMutex);
+
   response.add(request.getServerID(), request.getFunctionCode(), (uint8_t)(words * 2));
 
   for (uint16_t i = 0; i < words; ++i) {
@@ -594,40 +604,52 @@ ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
 }
 
 // FC 0x05: Write Single Coil
-ModbusMessage HeishaModBusServer::FC_05(ModbusMessage request) {
+ModbusMessage HeishaModbusServer::FC_05(ModbusMessage request) {
   ModbusMessage response;
 
   uint16_t start = 0;
   uint16_t state = 0;
   request.get(2, start, state);
 
-  if (start >= RELAY_COUNT) {
+  if (!writesAllowed.load()) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
+  } else if (start >= RELAY_COUNT) {
     response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
   } else if (state != 0x0000 && state != 0xFF00) {
     response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+  } else if (!enqueueWrite({ true, start, state })) {
+    response.setError(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_BUSY);
   } else {
-    if (start == 0) setRelay1(state == 0xFF00);
-    else setRelay2(state == 0xFF00);
     response = ECHO_RESPONSE;
   }
   return response;
 }
 
 // FC 0x06: Write Single Register
-ModbusMessage HeishaModBusServer::FC_06(ModbusMessage request) {
+ModbusMessage HeishaModbusServer::FC_06(ModbusMessage request) {
   ModbusMessage response;
   uint16_t address = 0;
   uint16_t value = 0;
   request.get(2, address, value);
 
-  CommandWriteResult result = handleWriteCommand(address, value);
-  if (result == CommandWriteResult::InvalidAddress) {
-    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+  if (!writesAllowed.load()) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
     return response;
   }
-  if (result == CommandWriteResult::UnsupportedValue) {
-    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
-    return response;
+
+  switch (handleWriteCommand(address, value)) {
+    case CommandWriteResult::Success:
+      break;
+    case CommandWriteResult::InvalidAddress:
+    case CommandWriteResult::Unavailable:
+      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+      return response;
+    case CommandWriteResult::UnsupportedValue:
+      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+      return response;
+    case CommandWriteResult::Busy:
+      response.setError(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_BUSY);
+      return response;
   }
 
   response.add(request.getServerID(), request.getFunctionCode());
@@ -636,19 +658,35 @@ ModbusMessage HeishaModBusServer::FC_06(ModbusMessage request) {
   return response;
 }
 
-void HeishaModBusServer::setup(bool isOptionalPCB, bool isS0Enabled)
+void HeishaModbusServer::setup(bool isOptionalPCB, bool isS0Enabled, bool allowWrites)
 {
   optionalPCB = isOptionalPCB;
   s0Enabled.store(isS0Enabled);
+  writesAllowed.store(allowWrites);
 
-  _mbServer.registerWorker(1, WRITE_COIL,           &HeishaModBusServer::FC_05);
-  _mbServer.registerWorker(1, READ_HOLD_REGISTER,   &HeishaModBusServer::FC_03);
-  _mbServer.registerWorker(1, WRITE_HOLD_REGISTER,  &HeishaModBusServer::FC_06);
+  _mbServer.registerWorker(1, WRITE_COIL,           &HeishaModbusServer::FC_05);
+  _mbServer.registerWorker(1, READ_HOLD_REGISTER,   &HeishaModbusServer::FC_03);
+  _mbServer.registerWorker(1, WRITE_HOLD_REGISTER,  &HeishaModbusServer::FC_06);
   _mbServer.start(502, 1, 20000);
 }
 
-void HeishaModBusServer::loop(bool isS0Enabled)
+void HeishaModbusServer::loop(bool isS0Enabled, bool extraDataBlockAvailable)
 {
   s0Enabled.store(isS0Enabled);
+
+  {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    memcpy(snapshotMain, actData, sizeof(snapshotMain));
+    memcpy(snapshotExtra, actDataExtra, sizeof(snapshotExtra));
+    memcpy(snapshotOpt, actOptData, sizeof(snapshotOpt));
+    snapshotExtraAvailable = extraDataBlockAvailable;
+  }
+
+  // Execute queued writes here, in the main loop, where sending commands, logging and
+  // publishing to MQTT are safe.
+  WriteRequest request;
+  while (dequeueWrite(request)) {
+    executeWrite(request);
+  }
 }
 #endif

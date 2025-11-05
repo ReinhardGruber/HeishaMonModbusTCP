@@ -19,7 +19,7 @@ def topics(name):
 cmds_src = open(src_dir + '/commands.h').read()
 def cmds(name):
     m = re.search(name + r'\[\]\s*PROGMEM\s*=\s*\{(.*?)\n\};', cmds_src, re.S)
-    return re.findall(r'\{\s*(?:\d+\s*,\s*)?"([^"]+)"', m.group(1))
+    return re.findall(r'\{\s*"([^"]+)"', m.group(1))
 names = topics('topics') + topics('xtopics') + topics('optTopics') \
       + cmds(r'const cmdStruct commands') + cmds(r'const optCmdStruct optionalCommands')
 with open(out_path, 'w') as out:

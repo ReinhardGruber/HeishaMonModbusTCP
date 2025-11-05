@@ -1,6 +1,6 @@
 #include <cassert>
 #include <set>
-#include "../../HeishaMon/HeishaModBusServer.cpp"
+#include "../../HeishaMon/HeishaModbusServer.cpp"
 #include "generated_stubs.h"
 #include "../../HeishaMon/s0data.cpp"
 
@@ -53,8 +53,9 @@ void expectError(uint8_t fc, uint16_t address, uint16_t value, uint8_t error) {
 }
 
 int main() {
-  HeishaModBusServer server;
-  server.setup(true);
+  HeishaModbusServer server;
+  server.setup(true, false, true);
+  server.loop(false, true);
   for (auto &group : readings) for (auto &value : group) value = "1";
   assert(read(9000) == 2);
 
@@ -114,7 +115,7 @@ int main() {
       assert(readFloat(ModbusMap::floatAddress(base + field)) == 0);
     }
   }
-  server.loop(true);
+  server.loop(true, true);
   assert(read(3005) == 0); // initialization has not assigned a GPIO yet
   actS0Settings[0].gpiopin = 1;
   actS0Settings[0].ppkwh = 2000;
@@ -159,19 +160,31 @@ int main() {
   assert(original == 2500); // both words use the captured sample
   actS0Settings[1].ppkwh = 0;
   assert(read(3105) == 0 && readFloat(16202) == 0); // no divide by zero
-  server.loop(false);
+  server.loop(false, true);
   assert(readFloat(16000) == 0 && read(3005) == 0);
 
   // Commands dispatch by stable IDs and signed payload, never by table position.
+  // Writes are only queued by the Modbus callbacks; loop() executes them.
   addresses.clear();
   for (const auto &command : commands) {
+    bool mapped = false;
+    for (const auto &entry : ModbusMap::MAIN_COMMANDS) mapped |= std::strcmp(command.name, entry.name) == 0;
+    assert(mapped); // every command has a permanent Modbus ID
+  }
+  for (const auto &command : ModbusMap::MAIN_COMMANDS) {
     assert(command.id > 0 && command.id <= 1000);
     const auto address = ModbusMap::commandAddress(command.id);
     assert(addresses.insert(address).second);
+    bool exists = false;
+    for (const auto &upstream : commands) exists |= std::strcmp(command.name, upstream.name) == 0;
+    assert(exists);
     if (std::strcmp(command.name, "SetCurves") == 0) {
       expectError(6, address, 0, ILLEGAL_DATA_VALUE);
     } else {
+      lastCommand.clear();
       call(6, address, uint16_t(-5));
+      assert(lastCommand.empty()); // not executed in the Modbus callback
+      server.loop(false, true);
       assert(lastCommand == command.name && lastPayload == "-5");
     }
   }
@@ -185,7 +198,15 @@ int main() {
     for (const auto &upstream : optionalCommands) exists |= std::strcmp(command.name, upstream.name) == 0;
     assert(exists);
     call(6, address, 7);
-    assert(lastCommand == command.name && lastPayload == "7");
+    server.loop(false, true);
+    // Temperatures are written like they are read: x100.
+    assert(lastCommand == command.name && lastPayload == (command.scale100 ? "0.07" : "7"));
+    call(6, address, uint16_t(-525));
+    server.loop(false, true);
+    assert(lastPayload == (command.scale100 ? "-5.25" : "-525"));
+    call(6, address, 2150);
+    server.loop(false, true);
+    assert(lastPayload == (command.scale100 ? "21.50" : "2150"));
   }
   expectError(6, 1001, 1, ILLEGAL_DATA_ADDRESS);
   expectError(6, 2000, 1, ILLEGAL_DATA_ADDRESS);
@@ -195,22 +216,66 @@ int main() {
   expectError(3, 0, 0, ILLEGAL_DATA_VALUE);
   expectError(3, 0, 126, ILLEGAL_DATA_VALUE);
   call(5, 0, 0xFF00);
+  assert(!relays[0]); // queued, not switched in the callback
+  server.loop(false, true);
   assert(relays[0] && !relays[1]);
   call(5, 1, 0xFF00);
   call(5, 0, 0);
+  server.loop(false, true);
   assert(!relays[0] && relays[1]);
   expectError(5, 2, 0, ILLEGAL_DATA_ADDRESS);
   expectError(5, 1, 1, ILLEGAL_DATA_VALUE);
 
+  // A full write queue answers with a busy exception instead of dropping requests silently.
+  for (int i = 0; i < 16; ++i) call(6, 20000, 1);
+  expectError(6, 20000, 1, SERVER_DEVICE_BUSY);
+  expectError(5, 0, 0xFF00, SERVER_DEVICE_BUSY);
+  server.loop(false, true);
+  call(6, 20000, 1);
+  server.loop(false, true);
+
+  // Extra data block missing: extra registers raise exceptions instead of returning zeros.
+  server.loop(false, false);
+  expectError(3, 1001, 1, ILLEGAL_DATA_ADDRESS);
+  expectError(3, 12002, 2, ILLEGAL_DATA_ADDRESS);
+  assert(read(14) != 0 && read(2001) == 2); // main and optional registers are unaffected
+  server.loop(false, true);
+  assert(read(1001) == 800);
+
+  // Optional PCB disabled: no optional registers, and optional commands are rejected.
+  server.setup(false, false, true);
+  server.loop(false, true);
+  expectError(3, 2001, 1, ILLEGAL_DATA_ADDRESS);
+  expectError(3, 14002, 2, ILLEGAL_DATA_ADDRESS);
+  expectError(6, 21006, 2150, ILLEGAL_DATA_ADDRESS);
+  lastCommand.clear();
+  call(6, 20000, 1); // main commands still work
+  server.loop(false, true);
+  assert(lastCommand == "SetHeatpump");
+
+  // Writes are refused unless explicitly allowed; reads keep working.
+  server.setup(true, false, false);
+  server.loop(false, true);
+  lastCommand.clear();
+  relays[0] = false;
+  expectError(6, 20000, 1, ILLEGAL_FUNCTION);
+  expectError(6, 22000, 1, ILLEGAL_FUNCTION);
+  expectError(5, 0, 0xFF00, ILLEGAL_FUNCTION);
+  server.loop(false, true);
+  assert(lastCommand.empty() && !relays[0]);
+  assert(read(9000) == 2);
+  server.setup(true, false, true);
+  server.loop(false, true);
+
   // The web table must enumerate every topic, command, coil and version entry once.
   unsigned count = 0;
   String row;
-  while (HeishaModBusServer::registerRow(count, row)) {
+  while (HeishaModbusServer::registerRow(count, row)) {
     assert(std::string(row.c_str()).find("<tr ") == 0);
     ++count;
     assert(count < 1000);
   }
   assert(count == NUMBER_OF_TOPICS + NUMBER_OF_TOPICS_EXTRA + NUMBER_OF_OPT_TOPICS +
-                  arraySize(commands) + arraySize(optionalCommands) + 3 + NUM_S0_COUNTERS * S0_FIELD_COUNT);
+                  arraySize(MAIN_COMMANDS) + arraySize(OPTIONAL_COMMANDS) + 3 + NUM_S0_COUNTERS * S0_FIELD_COUNT);
   std::puts("PASS: complete map, expansion, scaling, S0 values, command dispatch, coils, boundaries and register page");
 }

@@ -1,18 +1,37 @@
 # Modbus register map v2
 
-Firmware: **4.2.2-ModbusTCP**. This is a breaking change: update every existing
-PLC/Loxone mapping before using the new firmware. Old addresses are not aliases;
-some now refer to different values.
-
 TCP port **502**, unit ID **1**. All addresses below are zero-based protocol offsets,
 without a 40001 prefix. Add 1 only if your client expects one-based addressing.
 ESP32 supports Modbus TCP; ESP8266 does not.
+
+## Enabling Modbus TCP
+
+Modbus TCP has no authentication, so it is **off by default**. In **Settings**:
+
+- **Enable Modbus TCP server (port 502)**: starts the server after a reboot. Without
+  further options the server is read-only.
+- **Allow Modbus writes**: additionally accepts FC05 (relays) and FC06 (heat pump
+  commands, including `SetReset`). While this is off, write requests are answered
+  with `ILLEGAL_FUNCTION`.
+
+Only enable Modbus on a network you trust.
+
+Modbus requests are handled in a different task than the rest of the firmware.
+Register reads are served from a snapshot of the heat pump data that the main loop
+refreshes, and accepted writes are queued and executed by the main loop like any
+MQTT command. A write is therefore acknowledged when it is queued, not when the
+heat pump has processed it. If the queue is full the request is answered with
+`SERVER_DEVICE_BUSY`; retry it later.
 
 ## Fixed blocks
 
 Each measurement block reserves room for **1,000 topics**. Counts can grow without
 moving any other block. Only implemented topics/commands are accessible; reserved
 addresses return `ILLEGAL_DATA_ADDRESS`.
+
+Registers whose data is not available also return `ILLEGAL_DATA_ADDRESS` instead of a
+value decoded from an empty buffer: extra topics (XTOP) on heat pumps without the
+extra data block, and optional PCB topics (OPT) while optional PCB emulation is disabled.
 
 | Group | Reserved integer block (FC03, int16) | Reserved float block (FC03, float32) | Currently implemented |
 | --- | --- | --- | --- |
@@ -40,7 +59,7 @@ Only FC03, FC05 and FC06 are supported.
 
 ## Register page
 
-Open **Modbus registers** in the device menu or `http://<heishamon-ip>/modbus`.
+Open **Modbus** in the device menu or `http://<heishamon-ip>/modbus`.
 The searchable page is generated from the actual firmware ranges and command IDs.
 It lists both addresses for each measurement, scaling, function codes and every
 command, sorted numerically within read values and write commands. It only displays the map; it does not send commands or show live values.
@@ -55,13 +74,20 @@ The integer multiplier is fixed by the topic's unit, not the current value text:
 - Integer values are saturated to -32768 through 32767. Use floats for large counters/power values.
 - Extra/optional topics use their own unit definitions. They no longer accidentally
   inherit the main topic's scaling at the same index.
-- Non-numeric readings return 0 and are logged once. Error codes in the integer
+- Non-numeric readings return 0. Error codes in the integer
   Error register 44 use A=1000, B=2000, ..., H=8000 plus the number: H74=8074.
   Its float counterpart returns 0 for text; use register 44 for error information.
 
-**Write commands are always unscaled signed int16**, including temperatures.
-For example, write 45 to SetDHWTemp, not 4500. Allowed values are those of the
-regular HeishaMon command handlers. SetCurves needs JSON and must use MQTT/HTTP.
+**Heat pump commands (20000-20999, 22000) are unscaled signed int16**, including
+temperatures. For example, write 45 to SetDHWTemp, not 4500. Allowed values are those
+of the regular HeishaMon command handlers. SetCurves needs JSON and must use MQTT/HTTP.
+
+**Optional PCB temperature commands are x100, like the temperature readings**:
+SetPoolTemp, SetBufferTemp, SetZ1RoomTemp, SetZ1WaterTemp, SetZ2RoomTemp, SetZ2WaterTemp
+and SetSolarTemp. Write 2150 to set 21.50. The other optional PCB commands are x1.
+
+Writing an optional PCB command while optional PCB emulation is disabled returns
+`ILLEGAL_DATA_ADDRESS`.
 
 ## S0 inputs (large ESP32 board)
 
@@ -102,8 +128,9 @@ To display kWh, divide the Wh total by 1000 in the client.
 
 ## Main commands
 
-Addresses are based on permanent command IDs, not array order. IDs 1-1000 map to
-20000 + ID - 1; legacy ID 100 is reserved permanently and maps to SetReset at 22000.
+Addresses are based on permanent command IDs, not array order. The name to ID table
+is `MAIN_COMMANDS` in `HeishaMon/ModbusRegisterMap.h`. IDs 1-1000 map to
+20000 + ID - 1; ID 100 is reserved permanently and maps to SetReset at 22000.
 
 | Address | Command |
 | --- | --- |
@@ -184,7 +211,10 @@ for the corresponding heat-pump command handlers.
 | --- | --- |
 | 22000 | `SetReset` |
 
-## Migration from the previous fork
+## Migration from earlier Modbus fork builds
+
+Earlier builds of the Modbus fork (before register map v2) used different addresses.
+Old addresses are not aliases; some now refer to different values.
 
 | Previous mapping | Map v2 |
 | --- | --- |
@@ -208,7 +238,8 @@ Read register 9000 before enabling command writes to verify the map version is 2
 
 1. Append topic numbers within their existing group; never renumber or reuse a topic.
 2. Keep block bases fixed. Compile-time checks reject more than 1,000 topics per group.
-3. Give each new command a permanent, unused ID. Keep ID 100 reserved for SetReset.
-4. Add optional command IDs explicitly, regardless of upstream table order.
+3. Give each new command a permanent, unused ID in `MAIN_COMMANDS`. Keep ID 100 reserved for SetReset.
+4. Add optional command IDs to `OPTIONAL_COMMANDS` explicitly, regardless of upstream table order.
+   The firmware does not compile while a command has no ID.
 5. Update the documentation and run `python tests/modbus/run_tests.py` and the firmware build.
 6. Changing an assigned address, its meaning or scaling requires a new map version.
