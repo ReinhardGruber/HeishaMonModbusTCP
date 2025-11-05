@@ -14,6 +14,8 @@ The Modbus TCP server exposes the existing MQTT topics without duplicating data.
 
 Reading a holding register returns the latest value that HeishaMon already keeps in memory for the matching topic. Values are scaled exactly as published on MQTT. Non-numeric topics produce an `ILLEGAL_DATA_VALUE` response once and are logged for reference.
 
+All Temperature Topics are scalled x100 !!!
+
 ## Writing registers
 
 Writing a single register dispatches to the same command handler that is used for MQTT `Set…` topics. JSON commands (currently only `SetCurves`) are rejected with `ILLEGAL_DATA_VALUE` because they cannot be represented inside a 16-bit register payload.

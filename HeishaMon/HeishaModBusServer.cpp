@@ -79,14 +79,19 @@ bool isNumericValue(const String &value) {
   return hasDigits;
 }
 
-bool stringToRegisterValue(const String &value, uint16_t &registerValue) {
+bool isTemperatureTopic(unsigned int topicNumber) {
+  const char **description = (const char **)pgm_read_ptr(&topicDescription[topicNumber]);
+  return (description == Celsius) || (description == Kelvin);
+}
+
+bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_t &topicIndex) {
   if (!isNumericValue(value)) {
     registerValue = 0;
     return false;
   }
 
   bool hasDecimal = value.indexOf('.') >= 0;
-  if (hasDecimal) {
+  if (hasDecimal || isTemperatureTopic(topicIndex)) {
     float fValue = value.toFloat();
     float scaled = fValue * 100.0f;
     if (scaled > 32767.0f) {
@@ -148,11 +153,10 @@ bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
   if (!fetchTopicString(address, topicValue)) {
     return false;
   }
-
-  if (!stringToRegisterValue(topicValue, registerValue)) {
-    TopicSource source;
-    uint16_t topicIndex = 0;
-    bool shouldLog = decodeTopicAddress(address, source, topicIndex);
+  TopicSource source;
+  uint16_t topicIndex = 0;
+  bool shouldLog = decodeTopicAddress(address, source, topicIndex);
+  if (!stringToRegisterValue(topicValue, registerValue, topicIndex)) {
     if (shouldLog) {
       switch (source) {
         case TopicSource::Main:
