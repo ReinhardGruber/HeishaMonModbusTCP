@@ -85,7 +85,6 @@ bool isTopicScale100(unsigned int topicNumber) {
     (description == Celsius) || 
     (description == Kelvin) ||
     (description == LitersPerMin) ||
-    (description == RotationsPerMin) ||
     (description == Pressure) ||
     (description == Bar);
 }
