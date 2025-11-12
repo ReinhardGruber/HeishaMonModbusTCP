@@ -22,7 +22,6 @@ This Topics are scalled x100 !!!
         (description == Celsius) || 
         (description == Kelvin) ||
         (description == LitersPerMin) ||
-        (description == RotationsPerMin) ||
         (description == Pressure) ||
         (description == Bar);
     }
