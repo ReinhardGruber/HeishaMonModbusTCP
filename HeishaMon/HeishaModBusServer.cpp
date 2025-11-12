@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <string.h>
+#include <stdint.h>
 
 
 extern char actData[DATASIZE];
@@ -20,6 +21,12 @@ constexpr uint16_t EXTRA_TOPIC_BASE = 500;
 constexpr uint16_t OPTIONAL_TOPIC_BASE = 600;
 constexpr uint16_t COMMAND_BASE = 1000;
 constexpr uint16_t OPTIONAL_COMMAND_BASE = 2000;
+
+constexpr uint16_t FLOAT_TOPIC_BASE = 10000;
+constexpr uint16_t FLOAT_EXTRA_TOPIC_BASE = FLOAT_TOPIC_BASE + (NUMBER_OF_TOPICS * 2);
+constexpr uint16_t FLOAT_OPTIONAL_TOPIC_BASE = FLOAT_EXTRA_TOPIC_BASE + (NUMBER_OF_TOPICS_EXTRA * 2);
+
+
 
 enum class TopicSource {
   Main,
@@ -37,6 +44,18 @@ constexpr TopicRange kTopicRanges[] = {
   { 0, NUMBER_OF_TOPICS, TopicSource::Main },
   { EXTRA_TOPIC_BASE, NUMBER_OF_TOPICS_EXTRA, TopicSource::Extra },
   { OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, TopicSource::Optional }
+};
+
+struct FloatTopicRange {
+  uint16_t baseAddress;
+  uint16_t topicCount;
+  TopicSource source;
+};
+
+constexpr FloatTopicRange kFloatTopicRanges[] = {
+  { FLOAT_TOPIC_BASE, NUMBER_OF_TOPICS, TopicSource::Main },
+  { FLOAT_EXTRA_TOPIC_BASE, NUMBER_OF_TOPICS_EXTRA, TopicSource::Extra },
+  { FLOAT_OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, TopicSource::Optional }
 };
 
 template<typename T, size_t N>
@@ -131,59 +150,142 @@ bool decodeTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIn
   return false;
 }
 
-bool fetchTopicString(uint16_t address, String &value) {
-  TopicSource source;
-  uint16_t topicIndex = 0;
-  if (!decodeTopicAddress(address, source, topicIndex)) {
-    return false;
-  }
-
+bool fetchTopicString(TopicSource source, uint16_t topicIndex, String &value) {
   switch (source) {
     case TopicSource::Main:
+      if (topicIndex >= NUMBER_OF_TOPICS) {
+        return false;
+      }
       value = getDataValue(actData, topicIndex);
       return true;
     case TopicSource::Extra:
+      if (topicIndex >= NUMBER_OF_TOPICS_EXTRA) {
+        return false;
+      }
       value = getDataValueExtra(actDataExtra, topicIndex);
       return true;
     case TopicSource::Optional:
+      if (topicIndex >= NUMBER_OF_OPT_TOPICS) {
+        return false;
+      }
       value = getOptDataValue(actOptData, topicIndex);
       return true;
   }
   return false;
 }
 
-bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
-  String topicValue;
-  if (!fetchTopicString(address, topicValue)) {
-    return false;
-  }
+bool fetchTopicString(uint16_t address, String &value) {
   TopicSource source;
   uint16_t topicIndex = 0;
-  bool shouldLog = decodeTopicAddress(address, source, topicIndex);
-  if (!stringToRegisterValue(topicValue, registerValue, topicIndex)) {
-    if (shouldLog) {
-      switch (source) {
-        case TopicSource::Main:
-          shouldLog = !nonNumericMainReported[topicIndex];
-          nonNumericMainReported[topicIndex] = true;
-          break;
-        case TopicSource::Extra:
-          shouldLog = !nonNumericExtraReported[topicIndex];
-          nonNumericExtraReported[topicIndex] = true;
-          break;
-        case TopicSource::Optional:
-          shouldLog = !nonNumericOptReported[topicIndex];
-          nonNumericOptReported[topicIndex] = true;
-          break;
-      }
-    }
-    if (shouldLog) {
-      char logMsg[128];
-      snprintf_P(logMsg, sizeof(logMsg), PSTR("Modbus: non-numeric topic value for register %u: %s"), address, topicValue.c_str());
-      log_message(logMsg);
+  if (!decodeTopicAddress(address, source, topicIndex)) {
+    return false;
+  }
+  return fetchTopicString(source, topicIndex, value);
+}
+
+bool decodeFloatTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIndex, bool &highWord) {
+  for (const FloatTopicRange &range : kFloatTopicRanges) {
+    uint16_t rangeEnd = range.baseAddress + (range.topicCount * 2);
+    if ((address >= range.baseAddress) && (address < rangeEnd)) {
+      uint16_t offset = address - range.baseAddress;
+      topicIndex = offset / 2;
+      highWord = (offset % 2) == 0;
+      source = range.source;
+      return true;
     }
   }
+  return false;
+}
 
+bool stringToFloatWords(const String &value, uint16_t &msw, uint16_t &lsw) {
+  if (!isNumericValue(value)) {
+    msw = 0;
+    lsw = 0;
+    return false;
+  }
+  float fValue = value.toFloat();
+  uint32_t raw = 0;
+  static_assert(sizeof(float) == sizeof(uint32_t), "Unexpected float size");
+  memcpy(&raw, &fValue, sizeof(raw));
+  msw = static_cast<uint16_t>(raw >> 16);
+  lsw = static_cast<uint16_t>(raw & 0xFFFF);
+  return true;
+}
+
+bool shouldLogNonNumeric(TopicSource source, uint16_t topicIndex) {
+  switch (source) {
+    case TopicSource::Main:
+      if (topicIndex < arraySize(nonNumericMainReported)) {
+        bool shouldLog = !nonNumericMainReported[topicIndex];
+        nonNumericMainReported[topicIndex] = true;
+        return shouldLog;
+      }
+      break;
+    case TopicSource::Extra:
+      if (topicIndex < arraySize(nonNumericExtraReported)) {
+        bool shouldLog = !nonNumericExtraReported[topicIndex];
+        nonNumericExtraReported[topicIndex] = true;
+        return shouldLog;
+      }
+      break;
+    case TopicSource::Optional:
+      if (topicIndex < arraySize(nonNumericOptReported)) {
+        bool shouldLog = !nonNumericOptReported[topicIndex];
+        nonNumericOptReported[topicIndex] = true;
+        return shouldLog;
+      }
+      break;
+  }
+  return false;
+}
+
+void logNonNumericTopicValue(TopicSource source, uint16_t topicIndex, uint16_t address, const String &topicValue) {
+  if (!shouldLogNonNumeric(source, topicIndex)) {
+    return;
+  }
+  char logMsg[128];
+  snprintf_P(logMsg, sizeof(logMsg), PSTR("Modbus: non-numeric topic value for register %u: %s"), address, topicValue.c_str());
+  log_message(logMsg);
+}
+
+bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
+  TopicSource source;
+  uint16_t topicIndex = 0;
+  if (!decodeTopicAddress(address, source, topicIndex)) {
+    return false;
+  }
+
+  String topicValue;
+  if (!fetchTopicString(source, topicIndex, topicValue)) {
+    return false;
+  }
+
+  if (!stringToRegisterValue(topicValue, registerValue, topicIndex)) {
+    logNonNumericTopicValue(source, topicIndex, address, topicValue);
+  }
+
+  return true;
+}
+
+bool topicToFloatRegisterValue(uint16_t address, uint16_t &registerValue) {
+  TopicSource source;
+  uint16_t topicIndex = 0;
+  bool highWord = false;
+  if (!decodeFloatTopicAddress(address, source, topicIndex, highWord)) {
+    return false;
+  }
+
+  String topicValue;
+  if (!fetchTopicString(source, topicIndex, topicValue)) {
+    return false;
+  }
+
+  uint16_t msw = 0;
+  uint16_t lsw = 0;
+  if (!stringToFloatWords(topicValue, msw, lsw)) {
+    logNonNumericTopicValue(source, topicIndex, address, topicValue);
+  }
+  registerValue = highWord ? msw : lsw;
   return true;
 }
 
@@ -271,7 +373,8 @@ ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
   for (uint16_t i = 0; i < words; ++i) {
     uint16_t registerValue = 0;
     uint16_t targetAddress = addr + i;
-    if (!topicToRegisterValue(targetAddress, registerValue)) {
+    if (!topicToRegisterValue(targetAddress, registerValue) &&
+        !topicToFloatRegisterValue(targetAddress, registerValue)) {
       response.clear();
       response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
       return response;
