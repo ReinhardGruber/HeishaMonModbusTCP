@@ -9,7 +9,6 @@ The Modbus TCP server exposes the existing MQTT topics without duplicating data.
 | `600` – `606` | Optional PCB topics `OPT0` – `OPT6` | Available when the optional PCB is enabled. |
 | `1000` – `1033` | Write commands `Set…` | Forwarded to the regular command handlers. |
 | `2000` – `2013` | Optional PCB write commands | Forwarded to the optional command handlers. |
-
 | `10000` – `10277` | Main topics as IEEE 754 floats | Register `10000 + 2·TOPn` holds the MSW, the following register the LSW. |
 | `10278` – `10289` | Extra topics as IEEE 754 floats | Register `10278 + 2·XTOPn` holds the MSW, the following register the LSW. |
 | `10290` – `10303` | Optional PCB topics as IEEE 754 floats | Register `10290 + 2·OPTn` holds the MSW, the following register the LSW. |
