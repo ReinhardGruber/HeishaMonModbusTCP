@@ -14,7 +14,19 @@ The Modbus TCP server exposes the existing MQTT topics without duplicating data.
 
 Reading a holding register returns the latest value that HeishaMon already keeps in memory for the matching topic. Values are scaled exactly as published on MQTT. Non-numeric topics produce an `ILLEGAL_DATA_VALUE` response once and are logged for reference.
 
-All Temperature Topics are scalled x100 !!!
+This Topics are scalled x100 !!!
+
+    bool isTopicScale100(unsigned int topicNumber) {
+    const char **description = (const char **)pgm_read_ptr(&topicDescription[topicNumber]);
+    return 
+        (description == Celsius) || 
+        (description == Kelvin) ||
+        (description == LitersPerMin) ||
+        (description == RotationsPerMin) ||
+        (description == Pressure) ||
+        (description == Bar);
+    }
+
 
 ## Writing registers
 
