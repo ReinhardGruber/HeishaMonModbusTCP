@@ -79,9 +79,15 @@ bool isNumericValue(const String &value) {
   return hasDigits;
 }
 
-bool isTemperatureTopic(unsigned int topicNumber) {
+bool isTopicScale100(unsigned int topicNumber) {
   const char **description = (const char **)pgm_read_ptr(&topicDescription[topicNumber]);
-  return (description == Celsius) || (description == Kelvin);
+  return 
+    (description == Celsius) || 
+    (description == Kelvin) ||
+    (description == LitersPerMin) ||
+    (description == RotationsPerMin) ||
+    (description == Pressure) ||
+    (description == Bar);
 }
 
 bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_t &topicIndex) {
@@ -89,9 +95,8 @@ bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_
     registerValue = 0;
     return false;
   }
-
   bool hasDecimal = value.indexOf('.') >= 0;
-  if (hasDecimal || isTemperatureTopic(topicIndex)) {
+  if (hasDecimal || isTopicScale100(topicIndex)) {
     float fValue = value.toFloat();
     float scaled = fValue * 100.0f;
     if (scaled > 32767.0f) {
