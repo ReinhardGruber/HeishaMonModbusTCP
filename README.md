@@ -34,6 +34,10 @@ This project is a fork of the original [Egyras/HeishaMon](https://github.com/Egy
 - **Register map:** [Modbus Register Mapping](Modbus-Register-Mapping.md)
 - Upstream project: [Egyras/HeishaMon](https://github.com/Egyras/HeishaMon)
 
+### ErrorState Modbus encoding
+- Error codes that arrive as strings with an uppercase prefix and number (e.g., `H74`) are mapped into distinct Modbus register values.
+- The prefix selects a **1000-block offset** (`A` → `1000`, `B` → `2000`, …) that is added to the numeric part, keeping prefixed codes separate from plain numbers when read over Modbus.
+
 ---
 
 > If you find a mismatch between firmware fields and the Modbus map, open an issue with device model, firmware version, and a short capture.

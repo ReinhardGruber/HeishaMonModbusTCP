@@ -100,18 +100,50 @@ bool isNumericValue(const String &value) {
 
 bool isTopicScale100(unsigned int topicNumber) {
   const char **description = (const char **)pgm_read_ptr(&topicDescription[topicNumber]);
-  return 
-    (description == Celsius) || 
+  return
+    (description == Celsius) ||
     (description == Kelvin) ||
     (description == LitersPerMin) ||
     (description == Pressure) ||
     (description == Bar);
 }
 
+bool isErrorState(const String &value, uint16_t &registerValue) {
+  if (value.length() < 2) {
+    return false;
+  }
+
+  char prefix = value.charAt(0);
+  if (!isupper(static_cast<unsigned char>(prefix))) {
+    return false;
+  }
+
+  String numericPart = value.substring(1);
+  if (!isNumericValue(numericPart)) {
+    return false;
+  }
+
+  long intValue = numericPart.toInt();
+  intValue += ((prefix - 'A') + 1) * 1000;
+
+  if (intValue > 32767) {
+    intValue = 32767;
+  }
+  if (intValue < -32768) {
+    intValue = -32768;
+  }
+
+  registerValue = static_cast<uint16_t>(static_cast<int16_t>(intValue));
+  return true;
+}
+
 bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_t &topicIndex) {
   if (!isNumericValue(value)) {
-    registerValue = 0;
-    return false;
+    if (!isErrorState(value, registerValue)) {
+      registerValue = 0;
+      return false;
+    }
+    return true;
   }
   bool hasDecimal = value.indexOf('.') >= 0;
   if (hasDecimal || isTopicScale100(topicIndex)) {
