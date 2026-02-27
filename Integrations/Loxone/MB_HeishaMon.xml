@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Modbus Title="HeishaMon" Comment="" HintText="" Channel="1">
+	<Info templateType="7" minVersion="16011106"/>
+	<ModbusCmd Title="Outside_Temp" Comment="" HintText="" ModbusAddress="10028" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;°C" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Heatpump_State" Comment="" HintText="" ModbusAddress="10000" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Compressor_Freq" Comment="" HintText="" ModbusAddress="10016" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;Hz" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Pump_Flow" Comment="" HintText="" ModbusAddress="10002" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v.1&gt;l/min" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Main_Inlet_Temp" Comment="" HintText="" ModbusAddress="10010" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;°C" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Main_Outlet_Temp" Comment="" HintText="" ModbusAddress="10012" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;°C" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Heat_Power_Production" Comment="" HintText="" ModbusAddress="10284" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v.1&gt;kW" Analog="true" Sensor="true" SourceValHigh="1000" DestValHigh="1"/>
+	<ModbusCmd Title="Heat_Power_Consumption" Comment="" HintText="" ModbusAddress="10278" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v.1&gt;kW" Analog="true" Sensor="true" SourceValHigh="1000" DestValHigh="1"/>
+	<ModbusCmd Title="Water_Pressure" Comment="" HintText="" ModbusAddress="10230" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v.1&gt;bar" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Zones_State" Comment="" HintText="" ModbusAddress="10188" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="ErrorInformation" Comment="" HintText="" ModbusAddress="10088" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="30" Unit="&lt;v&gt;" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Defrosting_State" Comment="" HintText="" ModbusAddress="10052" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Outside_Pipe_Temp" Comment="" HintText="" ModbusAddress="10042" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v.1&gt;°C" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="Quiet_Mode_Level" Comment="" HintText="" ModbusAddress="10036" ModbusCmd="3" ModbusDataType="100" ModbusPollingCycle="5" Unit="&lt;v&gt;" Analog="true" Sensor="true" SourceValHigh="10" DestValHigh="10"/>
+	<ModbusCmd Title="SetHeatpump" Comment="" HintText="" ModbusAddress="1001" ModbusCmd="6" Unit="" Analog="false" Sensor="false" RepeatRate="3600"/>
+	<ModbusCmd Title="SetZ1HeatRequestTemperature" Comment="" HintText="" ModbusAddress="1005" ModbusCmd="6" ModbusDataType="1" Unit="&lt;v.1&gt;" Analog="true" Sensor="false" SourceValHigh="10" DestValHigh="10" RepeatRate="3600"/>
+	<ModbusCmd Title="SetOperationMode" Comment="" HintText="" ModbusAddress="1009" ModbusCmd="6" ModbusDataType="1" Unit="&lt;v.1&gt;" Analog="true" Sensor="false" SourceValHigh="10" DestValHigh="10" RepeatRate="3600"/>
+	<ModbusCmd Title="SetQuietMode" Comment="" HintText="" ModbusAddress="1003" ModbusCmd="6" ModbusDataType="1" Unit="&lt;v.1&gt;" Analog="true" Sensor="false" SourceValHigh="10" DestValHigh="10" RepeatRate="3600"/>
+	<ModbusCmd Title="SetMaxPumpDuty" Comment="" HintText="" ModbusAddress="1015" ModbusCmd="6" ModbusDataType="1" Unit="&lt;v.1&gt;" Analog="true" Sensor="false" SourceValHigh="10" DestValHigh="10" RepeatRate="3600"/>
+</Modbus>
