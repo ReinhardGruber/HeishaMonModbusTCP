@@ -42,7 +42,7 @@ Only FC03, FC05 and FC06 are supported.
 Open **Modbus registers** in the device menu or `http://<heishamon-ip>/modbus`.
 The searchable page is generated from the actual firmware ranges and command IDs.
 It lists both addresses for each measurement, scaling, function codes and every
-command. It only displays the map; it does not send commands or show live values.
+command, sorted numerically within read values and write commands. It only displays the map; it does not send commands or show live values.
 
 ## Scaling
 
@@ -62,7 +62,7 @@ The integer multiplier is fixed by the topic's unit, not the current value text:
 For example, write 45 to SetDHWTemp, not 4500. Allowed values are those of the
 regular HeishaMon command handlers. SetCurves needs JSON and must use MQTT/HTTP.
 
-## Main and system commands
+## Main commands
 
 Addresses are based on permanent command IDs, not array order. IDs 1-1000 map to
 20000 + ID - 1; legacy ID 100 is reserved permanently and maps to SetReset at 22000.
@@ -116,7 +116,6 @@ Addresses are based on permanent command IDs, not array order. IDs 1-1000 map to
 | 20044 | `SetDHWHeaterState` |
 | 20045 | `SetRoomHeaterState` |
 | 20046 | `SetHeaterOnOutdoorTemp` |
-| 22000 | `SetReset` |
 
 ## Optional PCB commands
 
@@ -140,6 +139,12 @@ for the corresponding heat-pump command handlers.
 | 21011 | `SetZ2WaterTemp` |
 | 21012 | `SetSolarTemp` |
 | 21013 | `SetOptPCBByte9` |
+
+## System commands
+
+| Address | Command |
+| --- | --- |
+| 22000 | `SetReset` |
 
 ## Migration from the previous fork
 

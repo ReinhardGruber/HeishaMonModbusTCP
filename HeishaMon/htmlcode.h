@@ -92,7 +92,6 @@ body{
   letter-spacing:-0.5px;
   text-decoration:none;
 }
-.topbar-logo span{color:var(--text-secondary);font-weight:400}
 .hamburger{
   background:none;border:none;
   color:var(--text-secondary);
@@ -138,6 +137,7 @@ body{
 .sidemenu-nav a:hover{background:var(--bg-elevated);color:var(--text-primary)}
 .sidemenu-nav a.danger{color:var(--red)}
 .sidemenu-nav a.danger:hover{background:var(--red-glow)}
+.sidemenu-nav a[aria-current="page"]{color:var(--accent);background:var(--accent-glow)}
 .sidemenu-nav .nav-icon{width:16px;text-align:center;opacity:.7}
 .sidemenu-footer{
   padding:16px 20px;
@@ -733,7 +733,18 @@ static const char webBodyStart[] FLASHPROG = R"====(
     </label>
   </div>
   
-  <nav class='sidemenu-nav' id='sideNav'></nav>
+  <nav class='sidemenu-nav' id='sideNav'>
+    <a href="/"><span class="nav-icon" aria-hidden="true">&#8962;</span> Home</a>
+    <a href="/firmware"><span class="nav-icon" aria-hidden="true">&#8679;</span> Firmware</a>
+    <a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon" aria-hidden="true">&#8635;</span> Reboot</a>
+    <a href="/rules"><span class="nav-icon" aria-hidden="true">&#8881;</span> Rules</a>
+    <a href="/settings"><span class="nav-icon" aria-hidden="true">&#9881;</span> Settings</a>
+)===="
+#ifdef ESP32
+R"====(    <a href="/modbus"><span class="nav-icon" aria-hidden="true">&#9432;</span> Modbus registers</a>
+)===="
+#endif
+R"====(  </nav>
   <div class='sidemenu-footer'>
     <a href='https://github.com/heishamon/HeishaMon' target='_blank'>GitHub</a>
   </div>
@@ -741,7 +752,7 @@ static const char webBodyStart[] FLASHPROG = R"====(
 <header class='topbar'>
   <div class='topbar-left'>
     <button class='hamburger' onclick='toggleMenu()'>&#9776;</button>
-    <a class='topbar-logo' href='/'>Heisha<span>Mon Modbus TCP</span></a>
+    <a class='topbar-logo' href='/'>HeishaMon ModBus TCP</a>
   </div>
   <div class='topbar-right'></div>
 </header>
@@ -752,22 +763,15 @@ static const char webFooter[] FLASHPROG = "</body></html>";
 // ─────────────────────────────────────────────────────────────────────────────
 // MENU & WEBSOCKET JS (shared across pages)
 // ─────────────────────────────────────────────────────────────────────────────
-static const char menuJS[] FLASHPROG =
-#ifdef ESP32
-R"====(<script>
-document.addEventListener('DOMContentLoaded', function(){
-  var nav = document.getElementById('sideNav');
-  if (nav && !nav.querySelector('a[href="/modbus"]')) {
-    var link = document.createElement('a');
-    link.href = '/modbus';
-    link.innerHTML = '<span class="nav-icon" aria-hidden="true">&#9432;</span> Modbus registers';
-    nav.appendChild(link);
-  }
-});
-</script>)===="
-#endif
-R"====(
+static const char menuJS[] FLASHPROG = R"====(
 <script>
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('#sideNav a').forEach(function(link){
+    if (link.getAttribute('href') === window.location.pathname) {
+      link.setAttribute('aria-current', 'page');
+    }
+  });
+});
 function toggleMenu(){
   var m=document.getElementById('sideMenu');
   var o=document.getElementById('menuOverlay');
@@ -1256,19 +1260,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // Side nav links for root page (injected via JS on load below)
 // We build the nav + status bar in one block, then the tab panes.
 
-// Side nav links and status bar for root page
+// Status bar for root page
 static const char webBodyRoot1[] FLASHPROG = R"====(
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  var nav=document.getElementById('sideNav');
-  nav.innerHTML=`
-<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
-<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
-<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
-<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
-`;
-});
-</script>
 <div class='main-content'>
 <div class='statusbar' id='statusBar'>
   <div class='status-chip'><span class='status-dot'></span><span class='chip-label'>WiFi</span><span class='chip-value' id='wifi'>—</span><span style='color:var(--text-muted);font-size:11px'>%</span></div>
@@ -1455,19 +1448,7 @@ static const char caUploadJS[] PROGMEM = R"====(
 )====";
 #endif
 
-static const char webBodySettings1[] FLASHPROG = R"====(
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  var nav=document.getElementById('sideNav');
-  nav.innerHTML=`
-<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
-<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
-<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
-<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
-`;
-});
-</script>
-)====";
+static const char webBodySettings1[] FLASHPROG = "";
 
 static const char settingsForm1[] FLASHPROG = R"====(
 <div class='main-content' style='max-width:780px;margin:0 auto'>
@@ -1881,17 +1862,6 @@ setTimeout(refreshWifiScan,500);
 // RULES PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 static const char showRulesPage1[] FLASHPROG = R"====(
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  var nav=document.getElementById('sideNav');
-  nav.innerHTML=`
-<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
-<a href="/firmware"><span class="nav-icon">&#8679;</span> Firmware</a>
-<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
-<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
-`;
-});
-</script>
   <div style='display:flex;'>
     <div id='line-numbers' class='line-numbers'></div>
     <div id='rules' contenteditable='true' spellcheck='false' class='rules-editor'>)====";
@@ -2340,17 +2310,6 @@ function getCursorPosition() {
 // FIRMWARE PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 static const char showFirmwarePage[] FLASHPROG = R"====(
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  var nav=document.getElementById('sideNav');
-  nav.innerHTML=`
-<a href="/"><span class="nav-icon">&#8634;</span> Home</a>
-<a href="/reboot" onclick="return confirm('Reboot the device?')"><span class="nav-icon">&#8635;</span> Reboot</a>
-<a href="/rules"><span class="nav-icon">&#8881;</span> Rules</a>
-<a href="/settings"><span class="nav-icon">&#9881;</span> Settings</a>
-`;
-});
-</script>
 <script>
 function getMD5(){
   var fn=document.getElementById('firmware').value;
@@ -3453,10 +3412,16 @@ static const char webModbusEnd[] FLASHPROG = R"====(
 </main>
 <script>
 document.addEventListener('DOMContentLoaded', function(){
-  document.getElementById('sideNav').insertAdjacentHTML('afterbegin', '<a href="/">Home</a><a href="/settings">Settings</a>');
   var search = document.getElementById('registerSearch');
   var kind = document.getElementById('registerKind');
   var rows = Array.from(document.querySelectorAll('#registerTable tbody tr'));
+  // Keep read values and write commands together, each in numeric address order.
+  rows.sort(function(a, b){
+    if (a.dataset.kind !== b.dataset.kind) return a.dataset.kind === 'read' ? -1 : 1;
+    return parseInt(a.cells[2].textContent, 10) - parseInt(b.cells[2].textContent, 10);
+  });
+  var body = document.querySelector('#registerTable tbody');
+  rows.forEach(function(row){ body.appendChild(row); });
   function filter(){
     var query = search.value.trim().toLowerCase();
     var count = 0;
