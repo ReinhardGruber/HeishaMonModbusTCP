@@ -45,7 +45,7 @@ This project is a fork of the original [Egyras/HeishaMon](https://github.com/Egy
 
 ## Upstream 4.2.2
 
-This fork includes upstream release 4.2.2 (`0de4f3c`) and identifies itself as **4.2.2-ModbusTCP**. The web interface retains the fork blue (`#368DF4`) in light and dark modes. Modbus TCP and the existing register addresses are preserved; see the register map for new commands and topics.
+This fork includes upstream release 4.2.2 (`0de4f3c`) and identifies itself as **4.2.2-ModbusTCP**. The web interface retains the fork blue (`#368DF4`) in light and dark modes. Modbus register map **v2** uses fixed, expandable blocks. **Existing PLC/Loxone mappings must be updated**; old register addresses are not compatibility aliases. Open **Modbus registers** in the device menu (`/modbus`) or see the [register map and migration guide](Modbus-Register-Mapping.md). Read register `9000` to identify map version `2`.
 
 The firmware files under `binaries/` imported from upstream are upstream builds without Modbus TCP. Build this fork or use a release explicitly marked ModbusTCP.
 

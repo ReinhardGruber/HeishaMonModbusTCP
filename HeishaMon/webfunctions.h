@@ -101,6 +101,9 @@ void loadSettings(settingsStruct *heishamonSettings);
 int getSettings(struct webserver_t *client, settingsStruct *heishamonSettings);
 int getSettingsJson(struct webserver_t *client, settingsStruct *heishamonSettings);
 
+#ifdef ESP32
+int handleModbus(struct webserver_t *client);
+#endif
 int handleSettings(struct webserver_t *client);
 int saveSettings(struct webserver_t *client, settingsStruct *heishamonSettings);
 int settingsReconnectWifi(struct webserver_t *client, settingsStruct *heishamonSettings);

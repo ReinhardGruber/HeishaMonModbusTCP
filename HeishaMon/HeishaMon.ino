@@ -1074,6 +1074,10 @@ int8_t webserver_cb(struct webserver_t *client, void *dat) {
     case WEBSERVER_CLIENT_REQUEST_URI: {
         if (strcmp_P((char *)dat, PSTR("/")) == 0) {
           client->route = 1;
+#ifdef ESP32
+        } else if (strcmp_P((char *)dat, PSTR("/modbus")) == 0) {
+          client->route = 200;
+#endif
         } else if (strcmp_P((char *)dat, PSTR("/json")) == 0) {
           client->route = 20;
         } else if (strcmp_P((char *)dat, PSTR("/reboot")) == 0) {
@@ -1306,6 +1310,11 @@ int8_t webserver_cb(struct webserver_t *client, void *dat) {
           case 1: {
               return handleRoot(client, readpercentage, mqttReconnects, &heishamonSettings);
             } break;
+#ifdef ESP32
+          case 200: {
+              return handleModbus(client);
+            } break;
+#endif
           case 20: {
               return handleJsonOutput(client, actData, actDataExtra, actOptData, &heishamonSettings, extraDataBlockAvailable);
             } break;

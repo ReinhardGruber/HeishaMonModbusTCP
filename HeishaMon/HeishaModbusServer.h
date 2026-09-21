@@ -8,6 +8,7 @@ class HeishaModBusServer {
 public:
     void setup(bool isOptionalPCB);
     void loop();
+    static bool registerRow(uint16_t index, String &html);
 
 private:
     // Callbacks für eModbus (müssen static sein)

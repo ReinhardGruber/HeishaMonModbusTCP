@@ -228,6 +228,9 @@ thead th{
   border-bottom:1px solid var(--border);
   position:sticky;top:56px;
 }
+/* Modbus tables scroll inside their own containers, below the page header. */
+.modbus-page thead th{top:0}
+
 tbody tr{
   border-bottom:1px solid rgba(42,48,64,.5);
   transition:background .15s;
@@ -749,7 +752,21 @@ static const char webFooter[] FLASHPROG = "</body></html>";
 // ─────────────────────────────────────────────────────────────────────────────
 // MENU & WEBSOCKET JS (shared across pages)
 // ─────────────────────────────────────────────────────────────────────────────
-static const char menuJS[] FLASHPROG = R"====(
+static const char menuJS[] FLASHPROG =
+#ifdef ESP32
+R"====(<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var nav = document.getElementById('sideNav');
+  if (nav && !nav.querySelector('a[href="/modbus"]')) {
+    var link = document.createElement('a');
+    link.href = '/modbus';
+    link.innerHTML = '<span class="nav-icon" aria-hidden="true">&#9432;</span> Modbus registers';
+    nav.appendChild(link);
+  }
+});
+</script>)===="
+#endif
+R"====(
 <script>
 function toggleMenu(){
   var m=document.getElementById('sideMenu');
@@ -3385,3 +3402,78 @@ static const char tzDataOptions[] FLASHPROG = R"====(
 <option value="459">Etc/Universal</option>
 <option value="460">Etc/Zulu</option>
 )====";
+
+
+#ifdef ESP32
+static const char webModbusStart[] FLASHPROG = R"====(
+<main class='main-content modbus-page'>
+  <h1 style='color:var(--accent);margin-bottom:16px'><span aria-hidden='true'>&#9432;</span> Modbus registers</h1>
+  <p>TCP port <strong>502</strong> &middot; Unit ID <strong>1</strong> &middot;
+     Addresses are <strong>zero-based</strong> protocol offsets (no 40001 prefix).
+     If your client uses one-based addresses, add 1.</p>
+  <p style='margin:12px 0'>Read values with FC03. Integer values are signed 16-bit.
+     Floats are IEEE 754 float32: read <strong>both registers</strong>, high word first (MSW / LSW), without scaling.
+     For integer values marked x100, divide by 100: 2050 means 20.50.</p>
+  <p style='margin:16px 0;color:var(--accent)'><strong>Register map v2 - migration required.</strong>
+     Read register 9000 to check the map version (value 2). Update existing PLC/Loxone mappings before using this firmware.</p>
+  <details style='margin:16px 0' open><summary>Fixed blocks with room to grow</summary>
+    <p>Each measurement group reserves 1,000 topics. Unused addresses are reserved and cannot be read yet.</p>
+    <div style='overflow-x:auto'><table>
+      <thead><tr><th>Group</th><th>Integer block</th><th>Float block</th></tr></thead>
+      <tbody><tr><td>Main (TOP)</td><td>0-999</td><td>10000-11999</td></tr>
+      <tr><td>Extra (XTOP)</td><td>1000-1999</td><td>12000-13999</td></tr>
+      <tr><td>Optional PCB (OPT)</td><td>2000-2999</td><td>14000-15999</td></tr></tbody>
+    </table></div>
+    <p><strong>Float start = 10000 + 2 &times; integer address</strong>; the next register holds the low word.
+       Example: TOP139 uses integer 139 and float 10278 / 10279.</p>
+    <p>Write commands: 20000-20999. Optional PCB commands: 21000-21999.
+       System commands: 22000-22999 (SetReset: 22000). Coils: 0 = relay 1, 1 = relay 2.</p>
+  </details>
+  <div style='display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:20px 0'>
+    <label for='registerSearch'>Find register</label>
+    <input id='registerSearch' class='setting-input' type='search' placeholder='Name or address, e.g. 12000' style='max-width:360px' disabled>
+    <label for='registerKind'>Access</label>
+    <select id='registerKind' disabled><option value=''>All</option><option value='read'>Read values</option><option value='write'>Write commands</option></select>
+    <span id='registerCount' role='status'>Loading registers...</span>
+  </div>
+  <div class='panel' style='overflow-x:auto'>
+    <table id='registerTable'>
+      <thead><tr><th>Group</th><th>Name</th><th>16-bit / coil address</th><th>Float32 MSW / LSW</th><th>Access</th><th>Scaling / notes</th></tr></thead>
+      <tbody>
+)====";
+
+static const char webModbusEnd[] FLASHPROG = R"====(
+      </tbody>
+    </table>
+  </div>
+  <p id='registerEmpty' hidden>No matching registers.</p>
+  <p style='margin-top:16px'>This page lists the map compiled into this firmware; it does not send commands.
+     Availability of readings depends on the heat pump and optional PCB configuration.
+     Non-numeric readings return 0; letter-prefixed error codes use a numeric block in the integer register.</p>
+</main>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  document.getElementById('sideNav').insertAdjacentHTML('afterbegin', '<a href="/">Home</a><a href="/settings">Settings</a>');
+  var search = document.getElementById('registerSearch');
+  var kind = document.getElementById('registerKind');
+  var rows = Array.from(document.querySelectorAll('#registerTable tbody tr'));
+  function filter(){
+    var query = search.value.trim().toLowerCase();
+    var count = 0;
+    rows.forEach(function(row){
+      var match = (!kind.value || row.dataset.kind === kind.value) && row.textContent.toLowerCase().includes(query);
+      row.hidden = !match;
+      if(match) count++;
+    });
+    document.getElementById('registerCount').textContent = count + ' / ' + rows.length + ' entries';
+    document.getElementById('registerEmpty').hidden = count !== 0;
+  }
+  search.disabled = false;
+  kind.disabled = false;
+  search.addEventListener('input', filter);
+  kind.addEventListener('change', filter);
+  filter();
+});
+</script>
+)====";
+#endif

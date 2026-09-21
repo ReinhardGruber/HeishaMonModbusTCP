@@ -1,6 +1,7 @@
 #ifdef ESP32
 #include "HeishaModbusServer.h"
 #include "gpio.h"
+#include "ModbusRegisterMap.h"
 #include "decode.h"
 #include "commands.h"
 
@@ -18,16 +19,11 @@ extern void log_message(char *string);
 
 namespace {
 
-constexpr uint16_t EXTRA_TOPIC_BASE = 500;
-constexpr uint16_t OPTIONAL_TOPIC_BASE = 600;
-constexpr uint16_t COMMAND_BASE = 1000;
-constexpr uint16_t OPTIONAL_COMMAND_BASE = 2000;
+using namespace ModbusMap;
 
-constexpr uint16_t FLOAT_TOPIC_BASE = 10000;
-constexpr uint16_t FLOAT_EXTRA_TOPIC_BASE = 10278;
-constexpr uint16_t FLOAT_OPTIONAL_TOPIC_BASE = 10290;
-
-
+static_assert(NUMBER_OF_TOPICS <= TOPIC_CAPACITY, "Main Modbus block is full");
+static_assert(NUMBER_OF_TOPICS_EXTRA <= TOPIC_CAPACITY, "Extra Modbus block is full");
+static_assert(NUMBER_OF_OPT_TOPICS <= TOPIC_CAPACITY, "Optional Modbus block is full");
 
 enum class TopicSource {
   Main,
@@ -42,29 +38,18 @@ struct TopicRange {
 };
 
 constexpr TopicRange kTopicRanges[] = {
-  { 0, NUMBER_OF_TOPICS, TopicSource::Main },
+  { MAIN_TOPIC_BASE, NUMBER_OF_TOPICS, TopicSource::Main },
   { EXTRA_TOPIC_BASE, NUMBER_OF_TOPICS_EXTRA, TopicSource::Extra },
   { OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, TopicSource::Optional }
-};
-
-struct FloatTopicRange {
-  uint16_t baseAddress;
-  uint16_t topicCount;
-  uint16_t firstTopic;
-  TopicSource source;
-};
-
-constexpr FloatTopicRange kFloatTopicRanges[] = {
-  { FLOAT_TOPIC_BASE, 139, 0, TopicSource::Main },
-  { 11000, NUMBER_OF_TOPICS - 139, 139, TopicSource::Main },
-  { FLOAT_EXTRA_TOPIC_BASE, NUMBER_OF_TOPICS_EXTRA, 0, TopicSource::Extra },
-  { FLOAT_OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, 0, TopicSource::Optional }
 };
 
 template<typename T, size_t N>
 constexpr size_t arraySize(const T (&)[N]) {
   return N;
 }
+
+static_assert(arraySize(OPTIONAL_COMMANDS) == arraySize(optionalCommands),
+              "Assign permanent Modbus IDs to new optional commands");
 
 bool nonNumericMainReported[NUMBER_OF_TOPICS] = { false };
 bool nonNumericExtraReported[NUMBER_OF_TOPICS_EXTRA] = { false };
@@ -101,14 +86,23 @@ bool isNumericValue(const String &value) {
   return hasDigits;
 }
 
-bool isTopicScale100(unsigned int topicNumber) {
-  const char **description = (const char **)pgm_read_ptr(&topicDescription[topicNumber]);
+bool isTopicScale100(TopicSource source, unsigned int topicNumber) {
+  const char **description = nullptr;
+  switch (source) {
+    case TopicSource::Main:
+      description = (const char **)pgm_read_ptr(&topicDescription[topicNumber]); break;
+    case TopicSource::Extra:
+      description = (const char **)pgm_read_ptr(&xtopicDescription[topicNumber]); break;
+    case TopicSource::Optional:
+      description = (const char **)pgm_read_ptr(&opttopicDescription[topicNumber]); break;
+  }
   return
     (description == Celsius) ||
     (description == Kelvin) ||
     (description == LitersPerMin) ||
     (description == Pressure) ||
-    (description == Bar);
+    (description == Bar) ||
+    (description == Ampere);
 }
 
 bool isErrorState(const String &value, uint16_t &registerValue) {
@@ -140,7 +134,7 @@ bool isErrorState(const String &value, uint16_t &registerValue) {
   return true;
 }
 
-bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_t &topicIndex) {
+bool stringToRegisterValue(const String &value, uint16_t &registerValue, TopicSource source, uint16_t topicIndex) {
   if (!isNumericValue(value)) {
     if (!isErrorState(value, registerValue)) {
       registerValue = 0;
@@ -148,8 +142,7 @@ bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_
     }
     return true;
   }
-  bool hasDecimal = value.indexOf('.') >= 0;
-  if (hasDecimal || isTopicScale100(topicIndex)) {
+  if (isTopicScale100(source, topicIndex)) {
     float fValue = value.toFloat();
     float scaled = fValue * 100.0f;
     if (scaled > 32767.0f) {
@@ -175,10 +168,9 @@ bool stringToRegisterValue(const String &value, uint16_t &registerValue, uint16_
 
 bool decodeTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIndex) {
   for (const TopicRange &range : kTopicRanges) {
-    uint16_t rangeEnd = range.baseAddress + range.count;
-    if ((address >= range.baseAddress) && (address < rangeEnd)) {
+    bool highWord;
+    if (decodeRange(address, range.baseAddress, range.count, 1, topicIndex, highWord)) {
       source = range.source;
-      topicIndex = address - range.baseAddress;
       return true;
     }
   }
@@ -219,12 +211,8 @@ bool fetchTopicString(uint16_t address, String &value) {
 }
 
 bool decodeFloatTopicAddress(uint16_t address, TopicSource &source, uint16_t &topicIndex, bool &highWord) {
-  for (const FloatTopicRange &range : kFloatTopicRanges) {
-    uint16_t rangeEnd = range.baseAddress + (range.topicCount * 2);
-    if ((address >= range.baseAddress) && (address < rangeEnd)) {
-      uint16_t offset = address - range.baseAddress;
-      topicIndex = range.firstTopic + offset / 2;
-      highWord = (offset % 2) == 0;
+  for (const TopicRange &range : kTopicRanges) {
+    if (decodeRange(address, floatAddress(range.baseAddress), range.count, 2, topicIndex, highWord)) {
       source = range.source;
       return true;
     }
@@ -295,7 +283,7 @@ bool topicToRegisterValue(uint16_t address, uint16_t &registerValue) {
     return false;
   }
 
-  if (!stringToRegisterValue(topicValue, registerValue, topicIndex)) {
+  if (!stringToRegisterValue(topicValue, registerValue, source, topicIndex)) {
     logNonNumericTopicValue(source, topicIndex, address, topicValue);
   }
 
@@ -332,7 +320,7 @@ bool copyMainCommandTopic(uint16_t address, char *topicName, size_t length) {
   for (size_t i = 0; i < arraySize(commands); ++i) {
     cmdStruct cmd;
     memcpy_P(&cmd, &commands[i], sizeof(cmd));
-    if ((COMMAND_BASE + cmd.id) == address) {
+    if (commandAddress(cmd.id) == address) {
       strncpy(topicName, cmd.name, length);
       topicName[length - 1] = '\0';
       return true;
@@ -346,20 +334,14 @@ bool copyOptionalCommandTopic(uint16_t address, char *topicName, size_t length) 
     return false;
   }
 
-  if (address < OPTIONAL_COMMAND_BASE) {
-    return false;
+  for (const OptionalCommand &command : OPTIONAL_COMMANDS) {
+    if (address == OPTIONAL_COMMAND_BASE + command.id) {
+      strncpy(topicName, command.name, length);
+      topicName[length - 1] = '\0';
+      return true;
+    }
   }
-
-  uint16_t index = address - OPTIONAL_COMMAND_BASE;
-  if (index >= arraySize(optionalCommands)) {
-    return false;
-  }
-
-  optCmdStruct cmd;
-  memcpy_P(&cmd, &optionalCommands[index], sizeof(cmd));
-  strncpy(topicName, cmd.name, length);
-  topicName[length - 1] = '\0';
-  return true;
+  return false;
 }
 
 bool getCommandTopic(uint16_t address, char *topicName, size_t length) {
@@ -395,7 +377,98 @@ CommandWriteResult handleWriteCommand(uint16_t address, uint16_t registerValue) 
 
 }  // namespace
 
-// FC 0x03 / 0x04: Read Holding/Input Registers
+// Render from the same ranges and command tables used by Modbus itself.
+// One row per callback keeps the HTTP response bounded on the device.
+bool HeishaModBusServer::registerRow(uint16_t index, String &html) {
+  for (const TopicRange &range : kTopicRanges) {
+    if (index >= range.count) {
+      index -= range.count;
+      continue;
+    }
+    const char *name = nullptr;
+    const char *group = nullptr;
+    switch (range.source) {
+      case TopicSource::Main: name = topics[index]; group = "Main"; break;
+      case TopicSource::Extra: name = xtopics[index]; group = "Extra"; break;
+      case TopicSource::Optional: name = optTopics[index]; group = "Optional PCB"; break;
+    }
+    const uint16_t floatRegister = floatAddress(range.baseAddress + index);
+    html = "<tr data-kind='read'><td>";
+    html += group;
+    html += "</td><td>";
+    html += String(FPSTR(name));
+    html += "</td><td>";
+    html += String(range.baseAddress + index);
+    html += "</td><td>";
+    html += String(floatRegister);
+    html += " / ";
+    html += String(floatRegister + 1);
+    html += "</td><td>Read / FC03</td><td>";
+    // The scale is fixed by the topic unit, never by the current value text.
+    html += isTopicScale100(range.source, index) ? "Integer: x100" : "Integer: x1";
+    html += "; float: x1";
+    if (range.source == TopicSource::Main && strcmp_P("Error", name) == 0) {
+      html += "; errors: letter block + code (H74 = 8074); float returns 0 for text";
+    }
+    if (range.source == TopicSource::Optional) {
+      html += optionalPCB ? "; optional PCB enabled" : "; optional PCB disabled";
+    } else if (range.source == TopicSource::Extra) {
+      html += "; requires extra heat-pump data";
+    }
+    html += "</td></tr>";
+    return true;
+  }
+  char name[32] = {0};
+  uint16_t address;
+  bool optional = false;
+  if (index < arraySize(commands)) {
+    cmdStruct command;
+    memcpy_P(&command, &commands[index], sizeof(command));
+    address = commandAddress(command.id);
+    strncpy(name, command.name, sizeof(name) - 1);
+  } else {
+    index -= arraySize(commands);
+    if (index < arraySize(OPTIONAL_COMMANDS)) {
+      address = OPTIONAL_COMMAND_BASE + OPTIONAL_COMMANDS[index].id;
+      copyOptionalCommandTopic(address, name, sizeof(name));
+      optional = true;
+    } else {
+      index -= arraySize(OPTIONAL_COMMANDS);
+      if (index < RELAY_COUNT) {
+        html = "<tr data-kind='write'><td>Relay</td><td>Relay ";
+        html += String(index + 1);
+        html += "</td><td>";
+        html += String(index);
+        html += " (coil)</td><td>-</td><td>Write / FC05</td>"
+                "<td>0x0000 = off; 0xFF00 = on</td></tr>";
+      } else if (index == RELAY_COUNT) {
+        html = "<tr data-kind='read'><td>Device</td><td>Register map version</td><td>";
+        html += String(VERSION_REGISTER);
+        html += "</td><td>-</td><td>Read / FC03</td><td>uint16: ";
+        html += String(VERSION);
+        html += "</td></tr>";
+      } else {
+        return false;
+      }
+      return true;
+    }
+  }
+  html = "<tr data-kind='write'><td>";
+  html += optional ? "Optional PCB" : (address >= SYSTEM_COMMAND_BASE ? "System command" : "Command");
+  html += "</td><td>";
+  html += name;
+  html += "</td><td>";
+  html += String(address);
+  html += "</td><td>-</td><td>";
+  html += isJsonCommand(name) ? "Unsupported" : "Write / FC06";
+  html += "</td><td>";
+  html += isJsonCommand(name) ? "JSON command; use MQTT or HTTP" : "Signed int16; x1 (no temperature scaling for commands)";
+  if (optional && !optionalPCB) html += "; optional PCB disabled";
+  html += "</td></tr>";
+  return true;
+}
+
+// FC 0x03: Read Holding Registers
 ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
   ModbusMessage response;
   uint16_t addr = 0;
@@ -403,12 +476,23 @@ ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
   request.get(2, addr);
   request.get(4, words);
 
+  if (words == 0 || words > 125) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+    return response;
+  }
+  if (uint32_t(addr) + words > 65536) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+    return response;
+  }
+
   response.add(request.getServerID(), request.getFunctionCode(), (uint8_t)(words * 2));
 
   for (uint16_t i = 0; i < words; ++i) {
     uint16_t registerValue = 0;
     uint16_t targetAddress = addr + i;
-    if (!topicToRegisterValue(targetAddress, registerValue) &&
+    if (targetAddress == VERSION_REGISTER) {
+      registerValue = VERSION;
+    } else if (!topicToRegisterValue(targetAddress, registerValue) &&
         !topicToFloatRegisterValue(targetAddress, registerValue)) {
       response.clear();
       response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
@@ -427,18 +511,14 @@ ModbusMessage HeishaModBusServer::FC_05(ModbusMessage request) {
   uint16_t state = 0;
   request.get(2, start, state);
 
-  if (start <= 2) {
-    if (state == 0x0000) {
-      setRelay1(0);
-      response = ECHO_RESPONSE;
-    } else if (state == 0xFF00) {
-      setRelay1(1);
-      response = ECHO_RESPONSE;
-    } else {
-      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
-    }
-  } else {
+  if (start >= RELAY_COUNT) {
     response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+  } else if (state != 0x0000 && state != 0xFF00) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+  } else {
+    if (start == 0) setRelay1(state == 0xFF00);
+    else setRelay2(state == 0xFF00);
+    response = ECHO_RESPONSE;
   }
   return response;
 }

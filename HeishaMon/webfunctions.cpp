@@ -3,6 +3,9 @@
 #include "version.h"
 #include "htmlcode.h"
 #include "commands.h"
+#ifdef ESP32
+#include "HeishaModbusServer.h"
+#endif
 #include "src/common/progmem.h"
 #include "src/common/webserver.h"
 #include "src/common/timerqueue.h"
@@ -1013,6 +1016,32 @@ int handleDebug(struct webserver_t *client, char *hex, byte hex_len) {
   return 0;
 }
 
+
+#ifdef ESP32
+int handleModbus(struct webserver_t *client) {
+  if (client->content == 0) {
+    webserver_send(client, 200, (char *)"text/html", 0);
+    webserver_send_content_P(client, webHeader, strlen_P(webHeader));
+    webserver_send_content_P(client, webCSS, strlen_P(webCSS));
+    webserver_send_content_P(client, webBodyStart, strlen_P(webBodyStart));
+    webserver_send_content_P(client, webModbusStart, strlen_P(webModbusStart));
+  } else {
+    String row;
+    if (HeishaModBusServer::registerRow(client->content - 1, row)) {
+      webserver_send_content(client, const_cast<char *>(row.c_str()), row.length());
+    } else {
+      // Send the footer once; the following empty callback ends chunked output.
+      String previous;
+      if (client->content == 1 || HeishaModBusServer::registerRow(client->content - 2, previous)) {
+        webserver_send_content_P(client, webModbusEnd, strlen_P(webModbusEnd));
+        webserver_send_content_P(client, menuJS, strlen_P(menuJS));
+        webserver_send_content_P(client, webFooter, strlen_P(webFooter));
+      }
+    }
+  }
+  return 0;
+}
+#endif
 
 int handleRoot(struct webserver_t *client, float readpercentage, int mqttReconnects, settingsStruct *heishamonSettings) {
   switch (client->content) {
