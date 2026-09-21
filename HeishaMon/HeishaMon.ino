@@ -1886,7 +1886,7 @@ void setup() {
 #endif
 
   loggingSerial.println(F("Setup ModBusTCP Server.."));
-  modbusServer.setup(heishamonSettings.optionalPCB);
+  modbusServer.setup(heishamonSettings.optionalPCB, heishamonSettings.use_s0);
 
   loggingSerial.println(F("Setup HTTP..."));
   setupHttp();
@@ -2033,7 +2033,7 @@ void loop() {
   // Handle OTA first.s
   ArduinoOTA.handle();
 
-  modbusServer.loop();
+  modbusServer.loop(heishamonSettings.use_s0);
 
   mqtt_client.loop();
 

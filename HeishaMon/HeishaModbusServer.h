@@ -6,8 +6,8 @@
 
 class HeishaModBusServer {
 public:
-    void setup(bool isOptionalPCB);
-    void loop();
+    void setup(bool isOptionalPCB, bool isS0Enabled = false);
+    void loop(bool isS0Enabled);
     static bool registerRow(uint16_t index, String &html);
 
 private:
@@ -22,7 +22,7 @@ private:
 #else
 class HeishaModBusServer {
 public:
-    void setup(bool) {}
-    void loop() {}
+    void setup(bool, bool = false) {}
+    void loop(bool) {}
 };
 #endif

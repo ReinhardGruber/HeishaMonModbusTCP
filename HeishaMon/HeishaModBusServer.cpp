@@ -4,6 +4,8 @@
 #include "ModbusRegisterMap.h"
 #include "decode.h"
 #include "commands.h"
+#include "s0data.h"
+#include <atomic>
 
 #include <ctype.h>
 #include <math.h>
@@ -56,6 +58,56 @@ bool nonNumericExtraReported[NUMBER_OF_TOPICS_EXTRA] = { false };
 bool nonNumericOptReported[NUMBER_OF_OPT_TOPICS] = { false };
 
 bool optionalPCB = false;
+std::atomic<bool> s0Enabled{false};
+
+static_assert(NUM_S0_COUNTERS * S0_PORT_STRIDE <= TOPIC_CAPACITY, "S0 Modbus block is full");
+static_assert(S0_FIELD_COUNT <= S0_PORT_STRIDE, "S0 port block is full");
+const char *const s0FieldNames[] = {
+  "Watt", "WatthourTotal", "Watthour_Last_Report", "PulseQuality", "AvgPulseWidth", "Enabled"
+};
+const char *const s0FieldUnits[] = {"W", "Wh", "Wh", "%", "ms", "0/1"};
+static_assert(arraySize(s0FieldNames) == S0_FIELD_COUNT, "S0 field names missing");
+static_assert(arraySize(s0FieldUnits) == S0_FIELD_COUNT, "S0 field units missing");
+
+bool decodeS0Address(uint16_t address, uint16_t &port, uint16_t &field, bool &floating, bool &highWord) {
+  for (port = 0; port < NUM_S0_COUNTERS; ++port) {
+    const uint16_t base = S0_TOPIC_BASE + port * S0_PORT_STRIDE;
+    floating = false;
+    if (decodeRange(address, base, S0_FIELD_COUNT, 1, field, highWord)) return true;
+    floating = true;
+    if (decodeRange(address, floatAddress(base), S0_FIELD_COUNT, 2, field, highWord)) return true;
+  }
+  return false;
+}
+
+float s0FieldValue(const S0Reading &reading, uint16_t field) {
+  switch (field) {
+    case 0: return reading.watt;
+    case 1: return reading.watthourTotal;
+    case 2: return reading.watthour;
+    case 3: return reading.pulseQuality;
+    case 4: return reading.avgPulseWidth;
+    case 5: return reading.enabled ? 1.0f : 0.0f;
+  }
+  return 0;
+}
+
+bool s0ToRegisterValue(uint16_t address, const S0Reading readings[NUM_S0_COUNTERS], uint16_t &result) {
+  uint16_t port, field;
+  bool floating, highWord;
+  if (!decodeS0Address(address, port, field, floating, highWord)) return false;
+  const float value = s0FieldValue(readings[port], field);
+  if (floating) {
+    uint32_t bits;
+    static_assert(sizeof(value) == sizeof(bits), "Unexpected float size");
+    memcpy(&bits, &value, sizeof(bits));
+    result = highWord ? uint16_t(bits >> 16) : uint16_t(bits);
+  } else {
+    // Match the unscaled int16 ranges: truncate fractions, saturate large values.
+    result = uint16_t(value >= 32767.0f ? 32767 : value <= 0.0f ? 0 : int16_t(value));
+  }
+  return true;
+}
 
 enum class CommandWriteResult {
   Success,
@@ -418,6 +470,31 @@ bool HeishaModBusServer::registerRow(uint16_t index, String &html) {
     html += "</td></tr>";
     return true;
   }
+  if (index < NUM_S0_COUNTERS * S0_FIELD_COUNT) {
+    const uint16_t port = index / S0_FIELD_COUNT;
+    const uint16_t field = index % S0_FIELD_COUNT;
+    const uint16_t integer = S0_TOPIC_BASE + port * S0_PORT_STRIDE + field;
+    const uint16_t floating = floatAddress(integer);
+    html = "<tr data-kind='read'><td>S0 ";
+    html += String(port + 1);
+    html += "</td><td>";
+    html += s0FieldNames[field];
+    html += "</td><td>";
+    html += String(integer);
+    html += "</td><td>";
+    html += String(floating);
+    html += " / ";
+    html += String(floating + 1);
+    html += "</td><td>Read / FC03</td><td>";
+    html += s0FieldUnits[field];
+    html += "; x1; int16 truncates fractions and saturates at 32767; use float for energy";
+    if (field == 1) html += "; includes restored total; no automatic flash persistence";
+    if (field == 2) html += "; last completed S0 report interval; reads do not reset it";
+    if (field == 5) html += "; enabled and initialized with a valid pulses/kWh setting";
+    html += "; enable S0 in Settings; disabled inputs return 0</td></tr>";
+    return true;
+  }
+  index -= NUM_S0_COUNTERS * S0_FIELD_COUNT;
   char name[32] = {0};
   uint16_t address;
   bool optional = false;
@@ -485,6 +562,18 @@ ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
     return response;
   }
 
+  S0Reading s0Readings[NUM_S0_COUNTERS];
+  bool sampledS0 = false;
+  // Sample once per request; never mix two readings in one float register pair.
+  for (uint16_t i = 0; i < words && !sampledS0; ++i) {
+    uint16_t port, field;
+    bool floating, highWord;
+    if (decodeS0Address(addr + i, port, field, floating, highWord)) {
+      readS0Readings(s0Enabled.load(), s0Readings);
+      sampledS0 = true;
+    }
+  }
+
   response.add(request.getServerID(), request.getFunctionCode(), (uint8_t)(words * 2));
 
   for (uint16_t i = 0; i < words; ++i) {
@@ -493,7 +582,8 @@ ModbusMessage HeishaModBusServer::FC_03(ModbusMessage request) {
     if (targetAddress == VERSION_REGISTER) {
       registerValue = VERSION;
     } else if (!topicToRegisterValue(targetAddress, registerValue) &&
-        !topicToFloatRegisterValue(targetAddress, registerValue)) {
+        !topicToFloatRegisterValue(targetAddress, registerValue) &&
+        !(sampledS0 && s0ToRegisterValue(targetAddress, s0Readings, registerValue))) {
       response.clear();
       response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
       return response;
@@ -546,9 +636,10 @@ ModbusMessage HeishaModBusServer::FC_06(ModbusMessage request) {
   return response;
 }
 
-void HeishaModBusServer::setup(bool isOptionalPCB) 
+void HeishaModBusServer::setup(bool isOptionalPCB, bool isS0Enabled)
 {
   optionalPCB = isOptionalPCB;
+  s0Enabled.store(isS0Enabled);
 
   _mbServer.registerWorker(1, WRITE_COIL,           &HeishaModBusServer::FC_05);
   _mbServer.registerWorker(1, READ_HOLD_REGISTER,   &HeishaModBusServer::FC_03);
@@ -556,8 +647,8 @@ void HeishaModBusServer::setup(bool isOptionalPCB)
   _mbServer.start(502, 1, 20000);
 }
 
-void HeishaModBusServer::loop() 
+void HeishaModBusServer::loop(bool isS0Enabled)
 {
-  
+  s0Enabled.store(isS0Enabled);
 }
 #endif

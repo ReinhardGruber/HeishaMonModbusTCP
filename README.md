@@ -12,6 +12,8 @@ This project is a fork of the original [Egyras/HeishaMon](https://github.com/Egy
   (temps, states, duty cycles, modes, setpoints, etc.)
 - Readable & writable registers with **bounds checking**
 - Deterministic polling/update cycle suitable for PLC logic
+- Both S0 inputs available over Modbus: power, total/interval energy and pulse diagnostics
+  (integer blocks 3000/3100, float blocks 16000/16200; enable S0 in Settings).
 
 ### Works with (tested/targeted)
 - **Siemens LOGO!** (8.x) via Modbus/TCP (client)

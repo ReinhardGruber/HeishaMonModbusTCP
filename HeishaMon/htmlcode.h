@@ -3381,10 +3381,14 @@ static const char webModbusStart[] FLASHPROG = R"====(
       <thead><tr><th>Group</th><th>Integer block</th><th>Float block</th></tr></thead>
       <tbody><tr><td>Main (TOP)</td><td>0-999</td><td>10000-11999</td></tr>
       <tr><td>Extra (XTOP)</td><td>1000-1999</td><td>12000-13999</td></tr>
-      <tr><td>Optional PCB (OPT)</td><td>2000-2999</td><td>14000-15999</td></tr></tbody>
+      <tr><td>Optional PCB (OPT)</td><td>2000-2999</td><td>14000-15999</td></tr>
+      <tr><td>S0 inputs</td><td>3000-3999</td><td>16000-17999</td></tr></tbody>
     </table></div>
     <p><strong>Float start = 10000 + 2 &times; integer address</strong>; the next register holds the low word.
        Example: TOP139 uses integer 139 and float 10278 / 10279.</p>
+    <p>S0 1 starts at integer 3000 / float 16000; S0 2 at integer 3100 / float 16200.
+       Each input reserves 100 fields. Enable S0 and configure pulses/kWh in Settings.
+       Read floats for fractional energy and large totals; integer S0 values truncate fractions and stop at 32767.</p>
     <p>Write commands: 20000-20999. Optional PCB commands: 21000-21999.
        System commands: 22000-22999 (SetReset: 22000). Coils: 0 = relay 1, 1 = relay 2.</p>
   </details>
@@ -3407,7 +3411,7 @@ static const char webModbusEnd[] FLASHPROG = R"====(
   </div>
   <p id='registerEmpty' hidden>No matching registers.</p>
   <p style='margin-top:16px'>This page lists the map compiled into this firmware; it does not send commands.
-     Availability of readings depends on the heat pump and optional PCB configuration.
+     Availability of readings depends on the heat pump, optional PCB and S0 configuration.
      Non-numeric readings return 0; letter-prefixed error codes use a numeric block in the integer register.</p>
 </main>
 <script>

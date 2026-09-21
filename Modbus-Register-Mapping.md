@@ -19,6 +19,7 @@ addresses return `ILLEGAL_DATA_ADDRESS`.
 | Main TOPn | 0-999 | 10000-11999 | TOP0-TOP143: integer 0-143, float 10000-10287 |
 | Extra XTOPn | 1000-1999 | 12000-13999 | XTOP0-XTOP5: integer 1000-1005, float 12000-12011 |
 | Optional PCB OPTn | 2000-2999 | 14000-15999 | OPT0-OPT6: integer 2000-2006, float 14000-14013 |
+| S0 inputs | 3000-3999 | 16000-17999 | Input 1: integer 3000-3005, float 16000-16011; input 2: integer 3100-3105, float 16200-16211 |
 
 **Integer address = group base + topic number.**
 **Float start = 10000 + 2 * integer address.**
@@ -61,6 +62,43 @@ The integer multiplier is fixed by the topic's unit, not the current value text:
 **Write commands are always unscaled signed int16**, including temperatures.
 For example, write 45 to SetDHWTemp, not 4500. Allowed values are those of the
 regular HeishaMon command handlers. SetCurves needs JSON and must use MQTT/HTTP.
+
+## S0 inputs (large ESP32 board)
+
+Both S0 inputs are readable with **FC03**. Enable S0 in Settings and configure the
+correct **pulses per kWh** for each meter. The S0 group reserves 3000-3999;
+each input has a permanent 100-field block. Unused fields remain invalid.
+Adding S0 does not change existing addresses or the register map version (2).
+
+| Value | Unit | S0 1 integer | S0 1 float MSW / LSW | S0 2 integer | S0 2 float MSW / LSW |
+| --- | --- | --- | --- | --- | --- |
+| Watt | W | 3000 | 16000 / 16001 | 3100 | 16200 / 16201 |
+| WatthourTotal | Wh | 3001 | 16002 / 16003 | 3101 | 16202 / 16203 |
+| Watthour_Last_Report | Wh | 3002 | 16004 / 16005 | 3102 | 16204 / 16205 |
+| PulseQuality | % | 3003 | 16006 / 16007 | 3103 | 16206 / 16207 |
+| AvgPulseWidth | ms | 3004 | 16008 / 16009 | 3104 | 16208 / 16209 |
+| Enabled | 0/1 | 3005 | 16010 / 16011 | 3105 | 16210 / 16211 |
+
+All S0 values use **x1**. Integer readings truncate fractions and saturate at 32767.
+**Use floats for energy totals**, high power and fractional readings. Floats retain
+about seven significant decimal digits; this is not an exact 64-bit energy counter.
+To display kWh, divide the Wh total by 1000 in the client.
+
+- `Watt` uses the S0 subsystem's calculated power, including its low-power decay.
+- `WatthourTotal` uses accumulated pulses and the configured pulses/kWh. It includes
+  totals restored by the existing MQTT mechanism. This feature adds no flash
+  persistence; without a restore the counter starts again after reboot.
+- `Watthour_Last_Report` holds the energy from the last completed S0 reporting
+  interval (the same interval reported over MQTT/WebSocket). Before the first
+  report it is 0. It is **not energy since the last Modbus read**: polling never
+  resets or consumes pulses, energy counters or the reporting interval.
+- `PulseQuality` follows the S0 UI convention `100 * (good + 1) / (good + bad + 1)`;
+  an enabled input with no pulses yet reports 100%.
+- `Enabled` is 1 when S0 is enabled, initialized and pulses/kWh is greater than 0.
+  Otherwise all six values of that input are 0, including the status.
+- All fields are read-only. Both words of each float are generated from one
+  captured reading within an FC03 request. Read both words together, or all six
+  floats in one request of 12 registers.
 
 ## Main commands
 
