@@ -1,4 +1,5 @@
-#include "HeishaModBusServer.h"
+#ifdef ESP32
+#include "HeishaModbusServer.h"
 #include "gpio.h"
 #include "decode.h"
 #include "commands.h"
@@ -23,8 +24,8 @@ constexpr uint16_t COMMAND_BASE = 1000;
 constexpr uint16_t OPTIONAL_COMMAND_BASE = 2000;
 
 constexpr uint16_t FLOAT_TOPIC_BASE = 10000;
-constexpr uint16_t FLOAT_EXTRA_TOPIC_BASE = FLOAT_TOPIC_BASE + (NUMBER_OF_TOPICS * 2);
-constexpr uint16_t FLOAT_OPTIONAL_TOPIC_BASE = FLOAT_EXTRA_TOPIC_BASE + (NUMBER_OF_TOPICS_EXTRA * 2);
+constexpr uint16_t FLOAT_EXTRA_TOPIC_BASE = 10278;
+constexpr uint16_t FLOAT_OPTIONAL_TOPIC_BASE = 10290;
 
 
 
@@ -49,13 +50,15 @@ constexpr TopicRange kTopicRanges[] = {
 struct FloatTopicRange {
   uint16_t baseAddress;
   uint16_t topicCount;
+  uint16_t firstTopic;
   TopicSource source;
 };
 
 constexpr FloatTopicRange kFloatTopicRanges[] = {
-  { FLOAT_TOPIC_BASE, NUMBER_OF_TOPICS, TopicSource::Main },
-  { FLOAT_EXTRA_TOPIC_BASE, NUMBER_OF_TOPICS_EXTRA, TopicSource::Extra },
-  { FLOAT_OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, TopicSource::Optional }
+  { FLOAT_TOPIC_BASE, 139, 0, TopicSource::Main },
+  { 11000, NUMBER_OF_TOPICS - 139, 139, TopicSource::Main },
+  { FLOAT_EXTRA_TOPIC_BASE, NUMBER_OF_TOPICS_EXTRA, 0, TopicSource::Extra },
+  { FLOAT_OPTIONAL_TOPIC_BASE, NUMBER_OF_OPT_TOPICS, 0, TopicSource::Optional }
 };
 
 template<typename T, size_t N>
@@ -220,7 +223,7 @@ bool decodeFloatTopicAddress(uint16_t address, TopicSource &source, uint16_t &to
     uint16_t rangeEnd = range.baseAddress + (range.topicCount * 2);
     if ((address >= range.baseAddress) && (address < rangeEnd)) {
       uint16_t offset = address - range.baseAddress;
-      topicIndex = offset / 2;
+      topicIndex = range.firstTopic + offset / 2;
       highWord = (offset % 2) == 0;
       source = range.source;
       return true;
@@ -477,3 +480,4 @@ void HeishaModBusServer::loop()
 {
   
 }
+#endif

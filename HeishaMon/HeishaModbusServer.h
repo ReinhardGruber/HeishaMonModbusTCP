@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#ifdef ESP32
 #include "ModbusServerTCPasync.h"
 
 
@@ -17,3 +18,10 @@ private:
 private:
     ModbusServerTCPasync _mbServer;
 };
+#else
+class HeishaModBusServer {
+public:
+    void setup(bool) {}
+    void loop() {}
+};
+#endif

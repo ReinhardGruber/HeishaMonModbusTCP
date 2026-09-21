@@ -4,10 +4,10 @@ The Modbus TCP server exposes the existing MQTT topics without duplicating data.
 
 | Register range | Contents | Notes |
 | --- | --- | --- |
-| `0` – `138` | Main topics `TOP0` – `TOP138` | Register equals the topic number from [MQTT-Topics.md](MQTT-Topics.md). |
+| `0` – `143` | Main topics `TOP0` – `TOP143` | Register equals the topic number from [MQTT-Topics.md](MQTT-Topics.md). |
 | `500` – `505` | Extra topics `XTOP0` – `XTOP5` | Values provided by the extra buffer. |
 | `600` – `606` | Optional PCB topics `OPT0` – `OPT6` | Available when the optional PCB is enabled. |
-| `1000` – `1033` | Write commands `Set…` | Forwarded to the regular command handlers. |
+| `1001` – `1047`, `1100` | Write commands `Set…` | Forwarded to the regular command handlers. |
 | `2000` – `2013` | Optional PCB write commands | Forwarded to the optional command handlers. |
 | `10000` – `10277` | Main topics as IEEE 754 floats | Register `10000 + 2·TOPn` holds the MSW, the following register the LSW. |
 | `10278` – `10289` | Extra topics as IEEE 754 floats | Register `10278 + 2·XTOPn` holds the MSW, the following register the LSW. |
@@ -32,3 +32,20 @@ Writing a single register dispatches to the same command handler that is used fo
 * Writing a register that resolves to a JSON-only command responds with `ILLEGAL_DATA_VALUE`.
 
 This file documents the static mapping that is implemented in `HeishaMon/HeishaModBusServer.cpp` so future changes can keep the Modbus and MQTT topic numbering consistent.
+## Additions in 4.2.2-ModbusTCP
+
+Existing register addresses remain unchanged. New main topics TOP139-TOP143 use integer registers 139-143 and float registers 11000-11009 (MSW first), calculated as `11000 + 2 * (TOPn - 139)`. Extra and optional float registers keep their previous bases 10278 and 10290.
+
+| Write register | Command |
+| --- | --- |
+| 1039 | `SetForceHeater` |
+| 1040 | `SetHeatingControl` |
+| 1041 | `SetSmartDHW` |
+| 1042 | `SetQuietModePriority` |
+| 1043 | `SetPumpFlowrateMode` |
+| 1044 | `SetDHWSensorSelection` |
+| 1045 | `SetDHWHeaterState` |
+| 1046 | `SetRoomHeaterState` |
+| 1047 | `SetHeaterOnOutdoorTemp` |
+
+`SetReset` remains at register 1100. Modbus TCP is available on ESP32; the ESP8266 build provides the upstream features without Modbus TCP.
