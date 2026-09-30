@@ -26,7 +26,6 @@ void mqttGPIOCallback(char* topic, char* value) {
 #endif
 }
 
-
 #ifdef ESP32
 void setRelay1(bool state)
 {
