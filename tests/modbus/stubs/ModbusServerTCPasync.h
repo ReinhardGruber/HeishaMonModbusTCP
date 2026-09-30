@@ -7,9 +7,11 @@ constexpr uint8_t ILLEGAL_FUNCTION = 1;
 constexpr uint8_t ILLEGAL_DATA_ADDRESS = 2;
 constexpr uint8_t ILLEGAL_DATA_VALUE = 3;
 constexpr uint8_t SERVER_DEVICE_BUSY = 6;
+constexpr uint8_t READ_COIL = 1;
 constexpr uint8_t READ_HOLD_REGISTER = 3;
 constexpr uint8_t WRITE_COIL = 5;
 constexpr uint8_t WRITE_HOLD_REGISTER = 6;
+constexpr uint8_t WRITE_MULT_REGISTERS = 16;
 
 class ModbusMessage {
 public:
@@ -28,6 +30,7 @@ public:
   }
   uint8_t getServerID() const { return bytes.at(0); }
   uint8_t getFunctionCode() const { return bytes.at(1); }
+  size_t size() const { return bytes.size(); }
   void clear() { bytes.clear(); }
   void setError(uint8_t unit, uint8_t function, uint8_t error) {
     bytes = {unit, uint8_t(function | 0x80), error};

@@ -15,9 +15,11 @@ public:
 
 private:
     // eModbus callbacks (must be static)
+    static ModbusMessage FC_01(ModbusMessage request);
     static ModbusMessage FC_03(ModbusMessage request);
     static ModbusMessage FC_05(ModbusMessage request);
     static ModbusMessage FC_06(ModbusMessage request);
+    static ModbusMessage FC_16(ModbusMessage request);
 
 private:
     ModbusServerTCPasync _mbServer;

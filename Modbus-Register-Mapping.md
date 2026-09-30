@@ -1,4 +1,4 @@
-# Modbus register map v2
+# Modbus register map v3
 
 TCP port **502**, unit ID **1**. All addresses below are zero-based protocol offsets,
 without a 40001 prefix. Add 1 only if your client expects one-based addressing.
@@ -22,6 +22,19 @@ refreshes, and accepted writes are queued and executed by the main loop like any
 MQTT command. A write is therefore acknowledged when it is queued, not when the
 heat pump has processed it. If the queue is full the request is answered with
 `SERVER_DEVICE_BUSY`; retry it later.
+
+## Address map at a glance
+
+From low to high; every block has reserved room to grow.
+
+| Range | Function codes | Contents |
+| --- | --- | --- |
+| 0-4999 | FC03 | int16 measurements: main 0, extra 1000, optional PCB 2000, S0 3000 |
+| 5000-9999 | FC06, FC16 | int16 commands: heat pump 5000, optional PCB 6000, system 7000 |
+| 10000-19999 | FC03 | float32 measurements (2 registers each): main 10000, extra 12000, optional PCB 14000, S0 16000 |
+| 20000-29999 | FC16 | float32 commands (2 registers each): heat pump 20000, optional PCB 22000, system 24000 |
+| Coils 30000-31999 | FC01, FC05 | Relays (coil 30000 = relay 1, coil 30001 = relay 2). Coils are a separate address space in Modbus, so this does not overlap the registers above. |
+| 32000-32999 | FC03 | Device information: register map version, relay state |
 
 ## Fixed blocks
 
@@ -47,40 +60,75 @@ All floats are IEEE 754 float32, unscaled.
 
 | Other group | Reserved block | Access | Implemented |
 | --- | --- | --- | --- |
-| Device information | 9000-9999 | FC03, uint16 | 9000 = register map version, currently 2 |
-| Heat-pump commands | 20000-20999 | FC06, int16 | 20000-20046; 20015 is reserved for JSON-only SetCurves and rejects writes |
-| Optional PCB commands | 21000-21999 | FC06, int16 | 21000-21013 |
-| System commands | 22000-22999 | FC06, int16 | 22000 = SetReset |
-| Relay coils (separate coil address space) | 0-999 | FC05 | 0 = relay 1, 1 = relay 2 |
+| Heat-pump commands | 5000-5999 | FC06 / FC16, int16 | 5000-5046; 5015 is reserved for JSON-only SetCurves and rejects writes |
+| Optional PCB commands | 6000-6999 | FC06 / FC16, int16 | 6000-6013 |
+| System commands | 7000-7999 | FC06 / FC16, int16 | 7000 = SetReset |
+| Float32 commands | 20000-29999 | FC16, float32 (2 registers) | 20000 + 2 * (command address - 5000): heat pump 20000-21999, optional PCB 22000-23999, system 24000-25999 |
+| Relay coils (separate coil address space) | 30000-31999 | FC01 (read), FC05 (write) | 30000 = relay 1, 30001 = relay 2 |
+| Device information | 32000-32999 | FC03, uint16 | 32000 = register map version, currently 3; 32010 / 32011 = relay 1 / relay 2 state (0 = off, 1 = on) |
 
-FC05 accepts 0x0000 for off and 0xFF00 for on. Coil 2 is no longer an alias.
+FC05 accepts 0x0000 for off and 0xFF00 for on. Coil 30002 is not a relay.
+
+The relay state can be read back with **FC01 (Read Coils)** on coils 30000 and 30001 (1 = on), or with
+FC03 on registers 32010 (relay 1) and 32011 (relay 2) for clients without coil support. Reading
+also works while *Allow Modbus writes* is off. The state follows the actual relay output, so
+switching over MQTT or the web UI is reflected as well (refreshed in the main loop).
+A relay written just before can still read its old state until the main loop has executed the write.
+
+### Writing float32 values
+
+Every command also has a float32 address, laid out like the int16 command block:
+**float address = 20000 + 2 * (command address - 5000)**. Example: SetDHWTemp is int16 5010
+and float32 20020 / 20021; SetPoolTemp is int16 6006 and float32 22012 / 22013.
+
+Write a float with **FC16 (Write Multiple Registers)**: start at the high word (MSW first, like
+reading), quantity 2, one command per request. The value is the **real, unscaled value**
+(21.5 is 21.5, not 2150). Both words arrive in one request, so a half-written value is never
+executed. FC06 cannot write floats. FC16 with quantity 1 at an int16 command address behaves
+like FC06.
+
+- Heat pump commands only take whole numbers, so 21.0 is accepted and 21.5 is rejected with
+  `ILLEGAL_DATA_VALUE`. Optional PCB temperatures accept decimals (21.5).
+- NaN, infinity and values beyond +-32767 are rejected with `ILLEGAL_DATA_VALUE`.
+- A start address on the low word, or a quantity other than 2, is rejected
+  (`ILLEGAL_DATA_ADDRESS` / `ILLEGAL_DATA_VALUE`).
 FC03 supports 1-125 registers per request; reads across a reserved gap are rejected.
-Only FC03, FC05 and FC06 are supported.
+Only FC01, FC03, FC05, FC06 and FC16 are supported.
 
 ## Register page
 
 Open **Modbus** in the device menu or `http://<heishamon-ip>/modbus`.
 The searchable page is generated from the actual firmware ranges and command IDs.
 It lists both addresses for each measurement, scaling, function codes and every
-command, sorted numerically within read values and write commands. It only displays the map; it does not send commands or show live values.
+command, sorted in ascending order of the 16-bit / coil address. It only displays the map; it does not send commands or show live values.
 
 ## Scaling
 
-The integer multiplier is fixed by the topic's unit, not the current value text:
+The multiplier of the 16-bit integer registers is fixed by the topic's unit, not the current value text.
+**The float32 registers are never scaled**: they hold the real value (20.5 = 20.5), so no
+multiplier is needed there.
 
-- Temperature (Celsius/Kelvin), flow, pressure and current (Ampere): **x100**.
-  Divide by 100 in your client; 2050 means 20.50, -525 means -5.25.
+
+- Temperature (Celsius/Kelvin), flow, pressure and current (Ampere): **x100** in the int16
+  registers. Divide by 100 in your client; 2050 means 20.50, -525 means -5.25.
 - States, counters, power (W), rotational speed and other units: **x1**.
 - Integer values are saturated to -32768 through 32767. Use floats for large counters/power values.
-- Extra/optional topics use their own unit definitions. They no longer accidentally
-  inherit the main topic's scaling at the same index.
+- Extra/optional topics use their own unit definitions, independent of the main topic at the
+  same index.
 - Non-numeric readings return 0. Error codes in the integer
   Error register 44 use A=1000, B=2000, ..., H=8000 plus the number: H74=8074.
   Its float counterpart returns 0 for text; use register 44 for error information.
 
-**Heat pump commands (20000-20999, 22000) are unscaled signed int16**, including
-temperatures. For example, write 45 to SetDHWTemp, not 4500. Allowed values are those
-of the regular HeishaMon command handlers. SetCurves needs JSON and must use MQTT/HTTP.
+**Temperature commands are x100 as well**, like the int16 readings. The heat pump only takes
+whole degrees, so the value must be a multiple of 100: write 4500 to set SetDHWTemp to 45,
+-500 for -5. Other values (for example 4550) are rejected with `ILLEGAL_DATA_VALUE`. Affected
+commands: SetZ1HeatRequestTemperature, SetZ1CoolRequestTemperature,
+SetZ2HeatRequestTemperature, SetZ2CoolRequestTemperature, SetDHWTemp, SetFloorHeatDelta,
+SetFloorCoolDelta, SetDHWHeatDelta, SetHeaterStartDelta, SetHeaterStopDelta, SetBufferDelta,
+SetHeatingOffOutdoorTemp, SetBivalentStartTemp, SetBivalentAPStartTemp,
+SetBivalentAPStopTemp and SetHeaterOnOutdoorTemp. All other commands (modes, states, times,
+duty) are unscaled signed int16. Allowed values are those of the regular HeishaMon command
+handlers. SetCurves needs JSON and must use MQTT/HTTP.
 
 **Optional PCB temperature commands are x100, like the temperature readings**:
 SetPoolTemp, SetBufferTemp, SetZ1RoomTemp, SetZ1WaterTemp, SetZ2RoomTemp, SetZ2WaterTemp
@@ -94,7 +142,7 @@ Writing an optional PCB command while optional PCB emulation is disabled returns
 Both S0 inputs are readable with **FC03**. Enable S0 in Settings and configure the
 correct **pulses per kWh** for each meter. The S0 group reserves 3000-3999;
 each input has a permanent 100-field block. Unused fields remain invalid.
-Adding S0 does not change existing addresses or the register map version (2).
+Adding S0 does not change existing addresses or the register map version (3).
 
 | Value | Unit | S0 1 integer | S0 1 float MSW / LSW | S0 2 integer | S0 2 float MSW / LSW |
 | --- | --- | --- | --- | --- | --- |
@@ -130,109 +178,86 @@ To display kWh, divide the Wh total by 1000 in the client.
 
 Addresses are based on permanent command IDs, not array order. The name to ID table
 is `MAIN_COMMANDS` in `HeishaMon/ModbusRegisterMap.h`. IDs 1-1000 map to
-20000 + ID - 1; ID 100 is reserved permanently and maps to SetReset at 22000.
+5000 + ID - 1; ID 100 is reserved permanently and maps to SetReset at 7000.
 
 | Address | Command |
 | --- | --- |
-| 20000 | `SetHeatpump` |
-| 20001 | `SetHolidayMode` |
-| 20002 | `SetQuietMode` |
-| 20003 | `SetPowerfulMode` |
-| 20004 | `SetZ1HeatRequestTemperature` |
-| 20005 | `SetZ1CoolRequestTemperature` |
-| 20006 | `SetZ2HeatRequestTemperature` |
-| 20007 | `SetZ2CoolRequestTemperature` |
-| 20008 | `SetOperationMode` |
-| 20009 | `SetForceDHW` |
-| 20010 | `SetDHWTemp` |
-| 20011 | `SetForceDefrost` |
-| 20012 | `SetForceSterilization` |
-| 20013 | `SetPump` |
-| 20014 | `SetMaxPumpDuty` |
-| 20015 | `SetCurves` |
-| 20016 | `SetZones` |
-| 20017 | `SetFloorHeatDelta` |
-| 20018 | `SetFloorCoolDelta` |
-| 20019 | `SetDHWHeatDelta` |
-| 20020 | `SetHeaterDelayTime` |
-| 20021 | `SetHeaterStartDelta` |
-| 20022 | `SetHeaterStopDelta` |
-| 20023 | `SetMainSchedule` |
-| 20024 | `SetAltExternalSensor` |
-| 20025 | `SetExternalPadHeater` |
-| 20026 | `SetBufferDelta` |
-| 20027 | `SetBuffer` |
-| 20028 | `SetHeatingOffOutdoorTemp` |
-| 20029 | `SetExternalControl` |
-| 20030 | `SetExternalError` |
-| 20031 | `SetExternalCompressorControl` |
-| 20032 | `SetExternalHeatCoolControl` |
-| 20033 | `SetBivalentControl` |
-| 20034 | `SetBivalentMode` |
-| 20035 | `SetBivalentStartTemp` |
-| 20036 | `SetBivalentAPStartTemp` |
-| 20037 | `SetBivalentAPStopTemp` |
-| 20038 | `SetForceHeater` |
-| 20039 | `SetHeatingControl` |
-| 20040 | `SetSmartDHW` |
-| 20041 | `SetQuietModePriority` |
-| 20042 | `SetPumpFlowrateMode` |
-| 20043 | `SetDHWSensorSelection` |
-| 20044 | `SetDHWHeaterState` |
-| 20045 | `SetRoomHeaterState` |
-| 20046 | `SetHeaterOnOutdoorTemp` |
+| 5000 | `SetHeatpump` |
+| 5001 | `SetHolidayMode` |
+| 5002 | `SetQuietMode` |
+| 5003 | `SetPowerfulMode` |
+| 5004 | `SetZ1HeatRequestTemperature` |
+| 5005 | `SetZ1CoolRequestTemperature` |
+| 5006 | `SetZ2HeatRequestTemperature` |
+| 5007 | `SetZ2CoolRequestTemperature` |
+| 5008 | `SetOperationMode` |
+| 5009 | `SetForceDHW` |
+| 5010 | `SetDHWTemp` |
+| 5011 | `SetForceDefrost` |
+| 5012 | `SetForceSterilization` |
+| 5013 | `SetPump` |
+| 5014 | `SetMaxPumpDuty` |
+| 5015 | `SetCurves` |
+| 5016 | `SetZones` |
+| 5017 | `SetFloorHeatDelta` |
+| 5018 | `SetFloorCoolDelta` |
+| 5019 | `SetDHWHeatDelta` |
+| 5020 | `SetHeaterDelayTime` |
+| 5021 | `SetHeaterStartDelta` |
+| 5022 | `SetHeaterStopDelta` |
+| 5023 | `SetMainSchedule` |
+| 5024 | `SetAltExternalSensor` |
+| 5025 | `SetExternalPadHeater` |
+| 5026 | `SetBufferDelta` |
+| 5027 | `SetBuffer` |
+| 5028 | `SetHeatingOffOutdoorTemp` |
+| 5029 | `SetExternalControl` |
+| 5030 | `SetExternalError` |
+| 5031 | `SetExternalCompressorControl` |
+| 5032 | `SetExternalHeatCoolControl` |
+| 5033 | `SetBivalentControl` |
+| 5034 | `SetBivalentMode` |
+| 5035 | `SetBivalentStartTemp` |
+| 5036 | `SetBivalentAPStartTemp` |
+| 5037 | `SetBivalentAPStopTemp` |
+| 5038 | `SetForceHeater` |
+| 5039 | `SetHeatingControl` |
+| 5040 | `SetSmartDHW` |
+| 5041 | `SetQuietModePriority` |
+| 5042 | `SetPumpFlowrateMode` |
+| 5043 | `SetDHWSensorSelection` |
+| 5044 | `SetDHWHeaterState` |
+| 5045 | `SetRoomHeaterState` |
+| 5046 | `SetHeaterOnOutdoorTemp` |
 
 ## Optional PCB commands
 
 Optional command IDs are explicitly assigned in `HeishaMon/ModbusRegisterMap.h`.
-Their address is 21000 + ID. Enabling optional PCB emulation is still required
+Their address is 6000 + ID. Enabling optional PCB emulation is still required
 for the corresponding heat-pump command handlers.
 
 | Address | Command |
 | --- | --- |
-| 21000 | `SetHeatCoolMode` |
-| 21001 | `SetCompressorState` |
-| 21002 | `SetSmartGridMode` |
-| 21003 | `SetExternalThermostat1State` |
-| 21004 | `SetExternalThermostat2State` |
-| 21005 | `SetDemandControl` |
-| 21006 | `SetPoolTemp` |
-| 21007 | `SetBufferTemp` |
-| 21008 | `SetZ1RoomTemp` |
-| 21009 | `SetZ1WaterTemp` |
-| 21010 | `SetZ2RoomTemp` |
-| 21011 | `SetZ2WaterTemp` |
-| 21012 | `SetSolarTemp` |
-| 21013 | `SetOptPCBByte9` |
+| 6000 | `SetHeatCoolMode` |
+| 6001 | `SetCompressorState` |
+| 6002 | `SetSmartGridMode` |
+| 6003 | `SetExternalThermostat1State` |
+| 6004 | `SetExternalThermostat2State` |
+| 6005 | `SetDemandControl` |
+| 6006 | `SetPoolTemp` |
+| 6007 | `SetBufferTemp` |
+| 6008 | `SetZ1RoomTemp` |
+| 6009 | `SetZ1WaterTemp` |
+| 6010 | `SetZ2RoomTemp` |
+| 6011 | `SetZ2WaterTemp` |
+| 6012 | `SetSolarTemp` |
+| 6013 | `SetOptPCBByte9` |
 
 ## System commands
 
 | Address | Command |
 | --- | --- |
-| 22000 | `SetReset` |
-
-## Migration from earlier Modbus fork builds
-
-Earlier builds of the Modbus fork (before register map v2) used different addresses.
-Old addresses are not aliases; some now refer to different values.
-
-| Previous mapping | Map v2 |
-| --- | --- |
-| Main integer TOPn at n | Unchanged: n |
-| Extra integer 500+n | 1000+n |
-| Optional integer 600+n | 2000+n |
-| Main float TOP0-TOP138 at 10000+2*n | Unchanged |
-| New main float TOP139-TOP143 at 11000+2*(n-139) | 10000+2*n (10278-10287) |
-| Extra float 10278+2*n | 12000+2*n |
-| Optional float 10290+2*n | 14000+2*n |
-| Main command 1000+ID | 20000+ID-1 (except SetReset) |
-| SetReset 1100 | 22000 |
-| Optional command 2000+ID | 21000+ID |
-| Coils 0/1/2 all controlled relay 1 | 0 = relay 1; 1 = relay 2; 2 invalid |
-
-Also review integer scaling as described above. The included Loxone XML template
-uses map v2; screenshots and old binary releases may show legacy addresses.
-Read register 9000 before enabling command writes to verify the map version is 2.
+| 7000 | `SetReset` |
 
 ## Extension rules
 

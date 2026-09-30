@@ -14,7 +14,7 @@ the register page's row enumeration, plus both S0 inputs (scaling, report energy
 status, invalid configuration and non-destructive reads). It also checks that
 writes are queued and only executed by `loop()`, that writes are refused unless
 allowed, x100 optional PCB temperature writes, exceptions for unavailable extra
-and optional PCB registers, and the migrated Loxone template.
+and optional PCB registers, and the Loxone template.
 
 These tests complement the ESP32 firmware build; they do not validate real
 network timing or operation with a heat pump.

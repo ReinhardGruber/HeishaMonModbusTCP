@@ -3423,9 +3423,9 @@ document.addEventListener('DOMContentLoaded',function(){
      If your client uses one-based addresses, add 1.</p>
   <p style='margin:12px 0'>Read values with FC03. Integer values are signed 16-bit.
      Floats are IEEE 754 float32: read <strong>both registers</strong>, high word first (MSW / LSW), without scaling.
-     For integer values marked x100, divide by 100: 2050 means 20.50.</p>
-  <p style='margin:16px 0'>The Modbus TCP server must be enabled in Settings. Writes (FC05 / FC06) additionally require
-     <strong>Allow Modbus writes</strong>. Read register 9000 to check the register map version (currently 2).</p>
+     Temperatures in signed 16-bit registers are <strong>x100</strong>: divide by 100, 2050 means 20.50. Temperature commands (FC06) use the same x100 scale. Commands can also be written as an unscaled float32 with FC16.</p>
+  <p style='margin:16px 0'>The Modbus TCP server must be enabled in Settings. Writes (FC05 / FC06 / FC16) additionally require
+     <strong>Allow Modbus writes</strong>. The register map version is currently 3.</p>
   <details style='margin:16px 0' open><summary>Fixed blocks with room to grow</summary>
     <p>Each measurement group reserves 1,000 topics. Unused addresses are reserved and cannot be read yet.</p>
     <div style='overflow-x:auto'><table>
@@ -3440,8 +3440,6 @@ document.addEventListener('DOMContentLoaded',function(){
     <p>S0 1 starts at integer 3000 / float 16000; S0 2 at integer 3100 / float 16200.
        Each input reserves 100 fields. Enable S0 and configure pulses/kWh in Settings.
        Read floats for fractional energy and large totals; integer S0 values truncate fractions and stop at 32767.</p>
-    <p>Write commands: 20000-20999. Optional PCB commands: 21000-21999.
-       System commands: 22000-22999 (SetReset: 22000). Coils: 0 = relay 1, 1 = relay 2.</p>
   </details>
   <div style='display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:20px 0'>
     <label for='registerSearch'>Find register</label>
@@ -3470,9 +3468,8 @@ document.addEventListener('DOMContentLoaded', function(){
   var search = document.getElementById('registerSearch');
   var kind = document.getElementById('registerKind');
   var rows = Array.from(document.querySelectorAll('#registerTable tbody tr'));
-  // Keep read values and write commands together, each in numeric address order.
+  // One list in ascending order of the 16-bit / coil address.
   rows.sort(function(a, b){
-    if (a.dataset.kind !== b.dataset.kind) return a.dataset.kind === 'read' ? -1 : 1;
     return parseInt(a.cells[2].textContent, 10) - parseInt(b.cells[2].textContent, 10);
   });
   var body = document.querySelector('#registerTable tbody');

@@ -73,13 +73,13 @@ else:
 if executable is not None:
     subprocess.run([str(executable)], check=True)
 
-# Check the shipped integration against the new map, including migrated extras.
+# Check the shipped integration against the new map.
 loxone = ET.parse(ROOT / "Integrations/Loxone/MB_HeishaMon.xml").getroot()
 expected = {"Heat_Power_Consumption": 12000, "Heat_Power_Production": 12006,
-            "ErrorInformation": 44, "SetHeatpump": 20000,
-            "SetZ1HeatRequestTemperature": 20004, "SetOperationMode": 20008,
-            "SetQuietMode": 20002, "SetMaxPumpDuty": 20014}
+            "ErrorInformation": 44, "SetHeatpump": 5000,
+            "SetZ1HeatRequestTemperature": 5004, "SetOperationMode": 5008,
+            "SetQuietMode": 5002, "SetMaxPumpDuty": 5014}
 actual = {entry.attrib["Title"]: int(entry.attrib["ModbusAddress"])
           for entry in loxone.findall("ModbusCmd")}
 assert all(actual[name] == address for name, address in expected.items())
-print("PASS: Loxone map v2 migration")
+print("PASS: Loxone map v3 template")

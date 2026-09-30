@@ -63,11 +63,13 @@ char snapshotMain[DATASIZE] = { 0 };
 char snapshotExtra[DATASIZE] = { 0 };
 char snapshotOpt[OPTDATASIZE] = { 0 };
 bool snapshotExtraAvailable = false;
+bool snapshotRelay[RELAY_COUNT] = { false, false };
 
 struct WriteRequest {
   bool coil;
-  uint16_t address;
-  uint16_t value;
+  uint16_t address;  // relay number for a coil, else the int16 command register
+  bool coilOn;
+  char payload[16];  // command value as MQTT payload, already validated and scaled
 };
 
 constexpr size_t WRITE_QUEUE_SIZE = 16;
@@ -341,10 +343,11 @@ struct CommandTarget {
   bool scale100;
 };
 
+// address is the int16 command register (20000...), see commandAddress().
 bool resolveCommand(uint16_t address, CommandTarget &target) {
   for (const MainCommand &command : MAIN_COMMANDS) {
     if (commandAddress(command.id) == address) {
-      target = { command.name, false, false };
+      target = { command.name, false, command.scale100 };
       return true;
     }
   }
@@ -359,6 +362,44 @@ bool resolveCommand(uint16_t address, CommandTarget &target) {
 
 bool isJsonCommand(const char *commandTopic) {
   return strcmp(commandTopic, "SetCurves") == 0;
+}
+
+// int16 register: temperatures are x100. The heat pump commands only take whole degrees, so
+// a value that would be truncated is refused. Optional PCB temperatures keep their decimals.
+bool int16ToPayload(const CommandTarget &target, uint16_t registerValue, char *payload, size_t length) {
+  const int value = static_cast<int16_t>(registerValue);
+  if (!target.scale100) {
+    snprintf(payload, length, "%d", value);
+  } else if (target.optional) {
+    const int magnitude = value < 0 ? -value : value;
+    snprintf(payload, length, "%s%d.%02d", value < 0 ? "-" : "", magnitude / 100, magnitude % 100);
+  } else {
+    if (value % 100 != 0) {
+      return false;
+    }
+    snprintf(payload, length, "%d", value / 100);
+  }
+  return true;
+}
+
+// float32 registers are never scaled: the value is the real value (21.5 = 21.5 degrees).
+bool floatToPayload(const CommandTarget &target, uint16_t msw, uint16_t lsw, char *payload, size_t length) {
+  const uint32_t bits = (static_cast<uint32_t>(msw) << 16) | lsw;
+  float value;
+  static_assert(sizeof(value) == sizeof(bits), "Unexpected float size");
+  memcpy(&value, &bits, sizeof(value));
+  if (!isfinite(value) || fabsf(value) > 32767.0f) {
+    return false;
+  }
+  if (target.optional && target.scale100) {
+    snprintf(payload, length, "%.2f", value);
+    return true;
+  }
+  if (value != roundf(value)) {
+    return false;
+  }
+  snprintf(payload, length, "%d", static_cast<int>(value));
+  return true;
 }
 
 bool enqueueWrite(const WriteRequest &request) {
@@ -383,9 +424,11 @@ bool dequeueWrite(WriteRequest &request) {
 }
 
 // Runs in the async task: only validates and queues, the command is executed by loop().
-CommandWriteResult handleWriteCommand(uint16_t address, uint16_t registerValue) {
+// commandRegister is the int16 command register. For a float32 write, second is the low word
+// and registerValue the high word.
+CommandWriteResult handleWriteCommand(uint16_t commandRegister, uint16_t registerValue, bool isFloat, uint16_t second) {
   CommandTarget target;
-  if (!resolveCommand(address, target)) {
+  if (!resolveCommand(commandRegister, target)) {
     return CommandWriteResult::InvalidAddress;
   }
 
@@ -398,14 +441,20 @@ CommandWriteResult handleWriteCommand(uint16_t address, uint16_t registerValue) 
     return CommandWriteResult::Unavailable;
   }
 
-  return enqueueWrite({ false, address, registerValue }) ? CommandWriteResult::Success : CommandWriteResult::Busy;
+  WriteRequest request = { false, commandRegister, false, { 0 } };
+  const bool valid = isFloat ? floatToPayload(target, registerValue, second, request.payload, sizeof(request.payload))
+                             : int16ToPayload(target, registerValue, request.payload, sizeof(request.payload));
+  if (!valid) {
+    return CommandWriteResult::UnsupportedValue;
+  }
+  return enqueueWrite(request) ? CommandWriteResult::Success : CommandWriteResult::Busy;
 }
 
 // Runs in loop().
 void executeWrite(const WriteRequest &request) {
   if (request.coil) {
-    if (request.address == 0) setRelay1(request.value == 0xFF00);
-    else setRelay2(request.value == 0xFF00);
+    if (request.address == 0) setRelay1(request.coilOn);
+    else setRelay2(request.coilOn);
     return;
   }
 
@@ -416,15 +465,8 @@ void executeWrite(const WriteRequest &request) {
 
   char topicName[32] = { 0 };
   strncpy(topicName, target.name, sizeof(topicName) - 1);
-
-  char payload[16];
-  const int value = static_cast<int16_t>(request.value);
-  if (target.scale100) {
-    const int magnitude = value < 0 ? -value : value;
-    snprintf(payload, sizeof(payload), "%s%d.%02d", value < 0 ? "-" : "", magnitude / 100, magnitude % 100);
-  } else {
-    snprintf(payload, sizeof(payload), "%d", value);
-  }
+  char payload[sizeof(request.payload)];
+  memcpy(payload, request.payload, sizeof(payload));
   send_heatpump_command(topicName, payload, send_command, log_message, optionalPCB);
 }
 
@@ -458,8 +500,8 @@ bool HeishaModbusServer::registerRow(uint16_t index, String &html) {
     html += String(floatRegister + 1);
     html += "</td><td>Read / FC03</td><td>";
     // The scale is fixed by the topic unit, never by the current value text.
-    html += isTopicScale100(range.source, index) ? "Integer: x100" : "Integer: x1";
-    html += "; float: x1";
+    html += isTopicScale100(range.source, index) ? "int16: x100" : "int16: x1";
+    html += "; float32: unscaled (real value)";
     if (range.source == TopicSource::Main && strcmp_P("Error", name) == 0) {
       html += "; errors: letter block + code (H74 = 8074); float returns 0 for text";
     }
@@ -503,6 +545,7 @@ bool HeishaModbusServer::registerRow(uint16_t index, String &html) {
   if (index < arraySize(MAIN_COMMANDS)) {
     address = commandAddress(MAIN_COMMANDS[index].id);
     name = MAIN_COMMANDS[index].name;
+    scale100 = MAIN_COMMANDS[index].scale100;
   } else {
     index -= arraySize(MAIN_COMMANDS);
     if (index < arraySize(OPTIONAL_COMMANDS)) {
@@ -516,15 +559,23 @@ bool HeishaModbusServer::registerRow(uint16_t index, String &html) {
         html = "<tr data-kind='write'><td>Relay</td><td>Relay ";
         html += String(index + 1);
         html += "</td><td>";
-        html += String(index);
-        html += " (coil)</td><td>-</td><td>Write / FC05</td>"
-                "<td>0x0000 = off; 0xFF00 = on</td></tr>";
+        html += String(COIL_BASE + index);
+        html += " (coil)</td><td>-</td><td>Read / FC01, Write / FC05</td>"
+                "<td>FC05: 0x0000 = off; 0xFF00 = on; FC01: 1 = on</td></tr>";
       } else if (index == RELAY_COUNT) {
         html = "<tr data-kind='read'><td>Device</td><td>Register map version</td><td>";
         html += String(VERSION_REGISTER);
         html += "</td><td>-</td><td>Read / FC03</td><td>uint16: ";
         html += String(VERSION);
         html += "</td></tr>";
+      } else if (index < RELAY_COUNT + 1 + RELAY_COUNT) {
+        html = "<tr data-kind='read'><td>Relay</td><td>Relay ";
+        html += String(index - RELAY_COUNT);
+        html += " state</td><td>";
+        html += String(RELAY_STATE_REGISTER + index - RELAY_COUNT - 1);
+        html += "</td><td>-</td><td>Read / FC03</td><td>uint16: 0 = off, 1 = on (same as coil ";
+        html += String(COIL_BASE + index - RELAY_COUNT - 1);
+        html += ")</td></tr>";
       } else {
         return false;
       }
@@ -537,15 +588,21 @@ bool HeishaModbusServer::registerRow(uint16_t index, String &html) {
   html += name;
   html += "</td><td>";
   html += String(address);
-  html += "</td><td>-</td><td>";
-  html += isJsonCommand(name) ? "Unsupported" : "Write / FC06";
   html += "</td><td>";
   if (isJsonCommand(name)) {
-    html += "JSON command; use MQTT or HTTP";
-  } else if (scale100) {
-    html += "Signed int16; x100 like the temperature readings (2150 = 21.50)";
+    html += "-</td><td>Unsupported</td><td>JSON command; use MQTT or HTTP";
   } else {
-    html += "Signed int16; x1";
+    const uint16_t floatRegister = floatCommandAddress(address);
+    html += String(floatRegister);
+    html += " / ";
+    html += String(floatRegister + 1);
+    html += "</td><td>Write / FC06, FC16</td><td>";
+    if (scale100) {
+      html += optional ? "int16: x100 (2150 = 21.50); float32: real value, unscaled (21.5)"
+                       : "int16: x100, whole degrees only (2100 = 21); float32: real value, unscaled, whole degrees only (21.0)";
+    } else {
+      html += "int16: x1; float32: real value, unscaled, whole numbers only";
+    }
   }
   if (optional && !optionalPCB) html += "; optional PCB disabled: illegal data address";
   html += "</td></tr>";
@@ -591,6 +648,8 @@ ModbusMessage HeishaModbusServer::FC_03(ModbusMessage request) {
     uint16_t targetAddress = addr + i;
     if (targetAddress == VERSION_REGISTER) {
       registerValue = VERSION;
+    } else if (targetAddress >= RELAY_STATE_REGISTER && targetAddress < RELAY_STATE_REGISTER + RELAY_COUNT) {
+      registerValue = snapshotRelay[targetAddress - RELAY_STATE_REGISTER] ? 1 : 0;
     } else if (!topicToRegisterValue(targetAddress, registerValue) &&
         !topicToFloatRegisterValue(targetAddress, registerValue) &&
         !(sampledS0 && s0ToRegisterValue(targetAddress, s0Readings, registerValue))) {
@@ -599,6 +658,52 @@ ModbusMessage HeishaModbusServer::FC_03(ModbusMessage request) {
       return response;
     }
     response.add(registerValue);
+  }
+  return response;
+}
+
+// FC 0x01: Read Coils. Coil 0 = relay 1, coil 1 = relay 2 (the same coils FC05 writes).
+ModbusMessage HeishaModbusServer::FC_01(ModbusMessage request) {
+  ModbusMessage response;
+  uint16_t start = 0;
+  uint16_t count = 0;
+  request.get(2, start, count);
+
+  if (count == 0 || count > 2000) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+    return response;
+  }
+  if (start < COIL_BASE || uint32_t(start - COIL_BASE) + count > RELAY_COUNT) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+    return response;
+  }
+
+  uint8_t bits = 0;
+  {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    for (uint16_t i = 0; i < count; ++i) {
+      if (snapshotRelay[start - COIL_BASE + i]) bits |= uint8_t(1u << i);
+    }
+  }
+  response.add(request.getServerID(), request.getFunctionCode(), uint8_t(1), bits);
+  return response;
+}
+
+// Maps a rejected command write to its Modbus exception.
+static ModbusMessage writeError(ModbusMessage request, CommandWriteResult result) {
+  ModbusMessage response;
+  switch (result) {
+    case CommandWriteResult::InvalidAddress:
+    case CommandWriteResult::Unavailable:
+      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+      break;
+    case CommandWriteResult::UnsupportedValue:
+      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+      break;
+    case CommandWriteResult::Busy:
+    case CommandWriteResult::Success:
+      response.setError(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_BUSY);
+      break;
   }
   return response;
 }
@@ -613,11 +718,11 @@ ModbusMessage HeishaModbusServer::FC_05(ModbusMessage request) {
 
   if (!writesAllowed.load()) {
     response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
-  } else if (start >= RELAY_COUNT) {
+  } else if (start < COIL_BASE || start - COIL_BASE >= RELAY_COUNT) {
     response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
   } else if (state != 0x0000 && state != 0xFF00) {
     response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
-  } else if (!enqueueWrite({ true, start, state })) {
+  } else if (!enqueueWrite({ true, static_cast<uint16_t>(start - COIL_BASE), state == 0xFF00, { 0 } })) {
     response.setError(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_BUSY);
   } else {
     response = ECHO_RESPONSE;
@@ -637,24 +742,63 @@ ModbusMessage HeishaModbusServer::FC_06(ModbusMessage request) {
     return response;
   }
 
-  switch (handleWriteCommand(address, value)) {
-    case CommandWriteResult::Success:
-      break;
-    case CommandWriteResult::InvalidAddress:
-    case CommandWriteResult::Unavailable:
-      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
-      return response;
-    case CommandWriteResult::UnsupportedValue:
-      response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
-      return response;
-    case CommandWriteResult::Busy:
-      response.setError(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_BUSY);
-      return response;
+  const CommandWriteResult result = handleWriteCommand(address, value, false, 0);
+  if (result != CommandWriteResult::Success) {
+    return writeError(request, result);
   }
 
   response.add(request.getServerID(), request.getFunctionCode());
   response.add(address);
   response.add(value);
+  return response;
+}
+
+// FC 0x10: Write Multiple Registers. Only single commands are supported: one int16 command
+// register (same as FC06), or one float32 (two registers, MSW first) in the float command block.
+ModbusMessage HeishaModbusServer::FC_16(ModbusMessage request) {
+  ModbusMessage response;
+  uint16_t start = 0;
+  uint16_t count = 0;
+  uint8_t byteCount = 0;
+  request.get(2, start, count);
+  request.get(6, byteCount);
+
+  if (!writesAllowed.load()) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
+    return response;
+  }
+  if (count == 0 || count > 123 || byteCount != count * 2 || request.size() < 7u + byteCount) {
+    response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+    return response;
+  }
+
+  CommandWriteResult result;
+  if (start >= FLOAT_COMMAND_BASE) {
+    const uint32_t offset = start - FLOAT_COMMAND_BASE;
+    if (offset % 2 != 0 || offset / 2 >= 3 * TOPIC_CAPACITY) {
+      result = CommandWriteResult::InvalidAddress;  // must start at the high word of a command
+    } else if (count != 2) {
+      result = CommandWriteResult::UnsupportedValue;  // exactly one float32 per request
+    } else {
+      uint16_t msw = 0;
+      uint16_t lsw = 0;
+      request.get(7, msw, lsw);
+      result = handleWriteCommand(COMMAND_BASE + offset / 2, msw, true, lsw);
+    }
+  } else if (count == 1) {
+    uint16_t value = 0;
+    request.get(7, value);
+    result = handleWriteCommand(start, value, false, 0);
+  } else {
+    result = CommandWriteResult::UnsupportedValue;
+  }
+  if (result != CommandWriteResult::Success) {
+    return writeError(request, result);
+  }
+
+  response.add(request.getServerID(), request.getFunctionCode());
+  response.add(start);
+  response.add(count);
   return response;
 }
 
@@ -664,9 +808,11 @@ void HeishaModbusServer::setup(bool isOptionalPCB, bool isS0Enabled, bool allowW
   s0Enabled.store(isS0Enabled);
   writesAllowed.store(allowWrites);
 
+  _mbServer.registerWorker(1, READ_COIL,            &HeishaModbusServer::FC_01);
   _mbServer.registerWorker(1, WRITE_COIL,           &HeishaModbusServer::FC_05);
   _mbServer.registerWorker(1, READ_HOLD_REGISTER,   &HeishaModbusServer::FC_03);
   _mbServer.registerWorker(1, WRITE_HOLD_REGISTER,  &HeishaModbusServer::FC_06);
+  _mbServer.registerWorker(1, WRITE_MULT_REGISTERS,  &HeishaModbusServer::FC_16);
   _mbServer.start(502, 1, 20000);
 }
 
@@ -674,19 +820,20 @@ void HeishaModbusServer::loop(bool isS0Enabled, bool extraDataBlockAvailable)
 {
   s0Enabled.store(isS0Enabled);
 
-  {
-    std::lock_guard<std::mutex> lock(stateMutex);
-    memcpy(snapshotMain, actData, sizeof(snapshotMain));
-    memcpy(snapshotExtra, actDataExtra, sizeof(snapshotExtra));
-    memcpy(snapshotOpt, actOptData, sizeof(snapshotOpt));
-    snapshotExtraAvailable = extraDataBlockAvailable;
-  }
-
   // Execute queued writes here, in the main loop, where sending commands, logging and
   // publishing to MQTT are safe.
   WriteRequest request;
   while (dequeueWrite(request)) {
     executeWrite(request);
   }
+
+  // Refresh the snapshot after the writes so a relay reads back the state that was just set.
+  const bool relays[RELAY_COUNT] = { getRelay1(), getRelay2() };
+  std::lock_guard<std::mutex> lock(stateMutex);
+  memcpy(snapshotMain, actData, sizeof(snapshotMain));
+  memcpy(snapshotExtra, actDataExtra, sizeof(snapshotExtra));
+  memcpy(snapshotOpt, actOptData, sizeof(snapshotOpt));
+  snapshotExtraAvailable = extraDataBlockAvailable;
+  for (uint16_t i = 0; i < RELAY_COUNT; ++i) snapshotRelay[i] = relays[i];
 }
 #endif

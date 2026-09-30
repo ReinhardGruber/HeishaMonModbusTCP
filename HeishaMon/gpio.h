@@ -27,4 +27,6 @@ void setupGPIO(gpioSettingsStruct gpioSettings);
 void mqttGPIOCallback(char* topic, char* value);
 void setRelay1(bool state);
 void setRelay2(bool state);
+bool getRelay1();
+bool getRelay2();
 

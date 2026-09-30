@@ -38,4 +38,14 @@ void setRelay2(bool state)
   digitalWrite(relayTwoPin, state);
 }
 
+bool getRelay1()
+{
+  return digitalRead(relayOnePin);
+}
+
+bool getRelay2()
+{
+  return digitalRead(relayTwoPin);
+}
+
 #endif
