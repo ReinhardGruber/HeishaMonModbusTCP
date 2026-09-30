@@ -119,6 +119,8 @@ constexpr MainCommand MAIN_COMMANDS[] = {
   {45, "SetDHWHeaterState", false},
   {46, "SetRoomHeaterState", false},
   {47, "SetHeaterOnOutdoorTemp", true},
+  {48, "SetSterilizationTemp", true},
+  {49, "SetSterilizationMaxTime", false},
   {RESET_COMMAND_ID, "SetReset", false},
 };
 

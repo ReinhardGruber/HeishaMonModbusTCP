@@ -60,7 +60,7 @@ All floats are IEEE 754 float32, unscaled.
 
 | Other group | Reserved block | Access | Implemented |
 | --- | --- | --- | --- |
-| Heat-pump commands | 5000-5999 | FC06 / FC16, int16 | 5000-5046; 5015 is reserved for JSON-only SetCurves and rejects writes |
+| Heat-pump commands | 5000-5999 | FC06 / FC16, int16 | 5000-5048; 5015 is reserved for JSON-only SetCurves and rejects writes |
 | Optional PCB commands | 6000-6999 | FC06 / FC16, int16 | 6000-6013 |
 | System commands | 7000-7999 | FC06 / FC16, int16 | 7000 = SetReset |
 | Float32 commands | 20000-29999 | FC16, float32 (2 registers) | 20000 + 2 * (command address - 5000): heat pump 20000-21999, optional PCB 22000-23999, system 24000-25999 |
@@ -126,7 +126,7 @@ commands: SetZ1HeatRequestTemperature, SetZ1CoolRequestTemperature,
 SetZ2HeatRequestTemperature, SetZ2CoolRequestTemperature, SetDHWTemp, SetFloorHeatDelta,
 SetFloorCoolDelta, SetDHWHeatDelta, SetHeaterStartDelta, SetHeaterStopDelta, SetBufferDelta,
 SetHeatingOffOutdoorTemp, SetBivalentStartTemp, SetBivalentAPStartTemp,
-SetBivalentAPStopTemp and SetHeaterOnOutdoorTemp. All other commands (modes, states, times,
+SetBivalentAPStopTemp, SetHeaterOnOutdoorTemp and SetSterilizationTemp. All other commands (modes, states, times,
 duty) are unscaled signed int16. Allowed values are those of the regular HeishaMon command
 handlers. SetCurves needs JSON and must use MQTT/HTTP.
 
@@ -229,6 +229,8 @@ is `MAIN_COMMANDS` in `HeishaMon/ModbusRegisterMap.h`. IDs 1-1000 map to
 | 5044 | `SetDHWHeaterState` |
 | 5045 | `SetRoomHeaterState` |
 | 5046 | `SetHeaterOnOutdoorTemp` |
+| 5047 | `SetSterilizationTemp` |
+| 5048 | `SetSterilizationMaxTime` |
 
 ## Optional PCB commands
 

@@ -34,10 +34,11 @@ subprocess.run([str(executable)], check=True)
 
 # Check the shipped integration against the new map.
 loxone = ET.parse(ROOT / "Integrations/Loxone/MB_HeishaMon.xml").getroot()
-# Title -> (address, Loxone function code). Measurements are float32 (FC03),
+# Title -> (address, Loxone function code). Measurements are float32 (FC03)
+# except the error code, which only the int16 register carries (H74 = 8074);
 # int16 commands use FC06 at 5000+, temperature setpoints float32 FC16 at 20000+.
 expected = {"Heat_Power_Consumption": (12000, 3), "Heat_Power_Production": (12006, 3),
-            "ErrorInformation": (10088, 3), "SetHeatpump": (5000, 6),
+            "ErrorInformation": (44, 3), "SetHeatpump": (5000, 6),
             "SetQuietMode": (5002, 6), "SetOperationMode": (5008, 6),
             "SetMaxPumpDuty": (5014, 6), "SetZ1HeatRequestTemperature": (20008, 16),
             "SetZ1CoolRequestTemperature": (20010, 16)}
