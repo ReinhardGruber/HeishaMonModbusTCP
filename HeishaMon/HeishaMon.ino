@@ -45,7 +45,9 @@
 #include "commands.h"
 #include "rules.h"
 #include "version.h"
+#ifdef ESP32
 #include "HeishaModbusServer.h"
+#endif
 
 DNSServer dnsServer;
 

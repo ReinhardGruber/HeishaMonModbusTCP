@@ -1,6 +1,6 @@
 #pragma once
-#include <Arduino.h>
 #ifdef ESP32
+#include <Arduino.h>
 #include "ModbusServerTCPasync.h"
 
 // Modbus TCP server. The eModbus callbacks run in the AsyncTCP task, not in loop().
@@ -23,11 +23,5 @@ private:
 
 private:
     ModbusServerTCPasync _mbServer;
-};
-#else
-class HeishaModbusServer {
-public:
-    void setup(bool, bool, bool) {}
-    void loop(bool, bool) {}
 };
 #endif
