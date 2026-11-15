@@ -55,7 +55,7 @@ Standard precedence/associativity, parenthesization works as in normal math: `&&
 - If a valid-looking ruleset **crashes the device**, HeishaMon auto-disables rules on the next boot so you can recover without a boot loop. Don't try to defeat this from within a script.
 - Keep rulesets under roughly 10 KB (best practice from the firmware author, not a hard limit).
 - Sending a command to the heat pump is **asynchronous** — a `@Set…` write earlier in a block is not reflected in the corresponding read-topic later in the *same* firing. Always branch on the heat pump's own reported state, not on a value you just wrote.
-- Commands to the heat pump can be **silently dropped**, especially several in quick succession (`README.md` → "Communication reliability"). Budget: **no more than two `@Set…` commands within 30 seconds**, total across the whole ruleset — structure state machines so a single firing emits at most two commands and later phases run on one-shot timers staggered ≥ 30 s apart (the Jeisha worked example is built around exactly this). Separately, settings are most likely persisted to the heat pump's EEPROM, which has a finite write life — a few writes per hour per setting is fine, anything approaching once per second is far too much (`README.md` → "EEPROM warning").
+- Commands to the heat pump can be **silently dropped**, especially several in quick succession (`docs/reliability.md` → "Communication reliability"). Budget: **no more than two `@Set…` commands within 30 seconds**, total across the whole ruleset — structure state machines so a single firing emits at most two commands and later phases run on one-shot timers staggered ≥ 30 s apart (the Jeisha worked example is built around exactly this). Separately, settings are most likely persisted to the heat pump's EEPROM, which has a finite write life — a few writes per hour per setting is fine, anything approaching once per second is far too much (`docs/reliability.md` → "EEPROM warning").
 - For a command that must not stay dropped, use the **desired-state reconcile** pattern: keep the wanted value in a `#` global, write it from one parameterless helper block, and verify against the read-back topic on a timer, re-sending until it sticks:
 
   ```
@@ -71,7 +71,7 @@ Standard precedence/associativity, parenthesization works as in normal math: `&&
   end
   ```
 
-  Change the setting from anywhere with `#wantHeatpump = 1; applyHeatpump();`. The retry stops by itself once the read-back matches, and the 30 s verify interval keeps even a permanently-refused command inside the two-commands-per-30-seconds budget (and safely beyond the read-back reporting latency, so it never re-sends a command that actually arrived). This is the generalized form of the retry example in `README.md` → "Communication reliability".
+  Change the setting from anywhere with `#wantHeatpump = 1; applyHeatpump();`. The retry stops by itself once the read-back matches, and the 30 s verify interval keeps even a permanently-refused command inside the two-commands-per-30-seconds budget (and safely beyond the read-back reporting latency, so it never re-sends a command that actually arrived). This is the generalized form of the retry example in `docs/reliability.md` → "Communication reliability".
 
 ## Worked examples
 

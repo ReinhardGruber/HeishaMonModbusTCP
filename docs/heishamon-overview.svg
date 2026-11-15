@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="960" height="440" role="img" aria-labelledby="t d" font-family="'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif">
+  <title id="t">HeishaMon overview</title>
+  <desc id="d">The Panasonic Aquarea heat pump talks over the CN-CNT serial link to the HeishaMon. Sensors feed into it. HeishaMon publishes the data over MQTT, JSON and REST, and Modbus TCP to home automation systems, and runs rules on the device itself.</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7d8590"/>
+    </marker>
+    <linearGradient id="gHp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f76707"/><stop offset="1" stop-color="#d9480f"/></linearGradient>
+    <linearGradient id="gHm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#228be6"/><stop offset="1" stop-color="#1864ab"/></linearGradient>
+    <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#15aabf"/><stop offset="1" stop-color="#0b7285"/></linearGradient>
+    <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7950f2"/><stop offset="1" stop-color="#5f3dc4"/></linearGradient>
+  </defs>
+
+  <!-- column labels -->
+  <g fill="#7d8590" font-size="13" font-weight="600" letter-spacing="1.5" text-anchor="middle">
+    <text x="140" y="28">HEAT PUMP &amp; SENSORS</text>
+    <text x="480" y="28">ON THE DEVICE</text>
+    <text x="820" y="28">YOUR SYSTEMS</text>
+  </g>
+
+  <!-- left: heat pump -->
+  <rect x="20" y="48" width="240" height="132" rx="14" fill="url(#gHp)"/>
+  <g fill="#fff" text-anchor="middle">
+    <text x="140" y="92" font-size="20" font-weight="700">Panasonic Aquarea</text>
+    <text x="140" y="118" font-size="14" opacity="0.92">H · J · K · L · M series</text>
+    <text x="140" y="150" font-size="12" opacity="0.85">CN-CNT / CN-NMODE · 5 V UART</text>
+  </g>
+
+  <!-- left: sensors -->
+  <g fill="#fff" text-anchor="middle" font-size="15" font-weight="600">
+    <rect x="20" y="224" width="240" height="46" rx="10" fill="url(#gIn)"/>
+    <text x="140" y="253">DS18B20 1-wire sensors</text>
+    <rect x="20" y="282" width="240" height="46" rx="10" fill="url(#gIn)"/>
+    <text x="140" y="311">S0 kWh meters</text>
+    <rect x="20" y="340" width="240" height="46" rx="10" fill="url(#gIn)"/>
+    <text x="140" y="369">OpenTherm thermostat</text>
+  </g>
+
+  <!-- center: HeishaMon -->
+  <rect x="330" y="48" width="300" height="338" rx="18" fill="url(#gHm)"/>
+  <g fill="#fff" text-anchor="middle">
+    <text x="480" y="90" font-size="28" font-weight="700">HeishaMon</text>
+    <text x="480" y="113" font-size="13" opacity="0.9">ESP8266 · ESP32-S3</text>
+  </g>
+  <g text-anchor="middle" font-size="15" font-weight="600" fill="#0b3d6b">
+    <rect x="352" y="136" width="256" height="44" rx="9" fill="#e7f5ff"/>
+    <text x="480" y="164">Decode &amp; send commands</text>
+    <rect x="352" y="192" width="256" height="44" rx="9" fill="#e7f5ff"/>
+    <text x="480" y="220">Rules engine</text>
+    <rect x="352" y="248" width="256" height="44" rx="9" fill="#e7f5ff"/>
+    <text x="480" y="276">Web UI</text>
+    <rect x="352" y="304" width="256" height="44" rx="9" fill="#e7f5ff"/>
+    <text x="480" y="332">Relays &amp; extra GPIO</text>
+  </g>
+
+  <!-- right: outputs -->
+  <g fill="#fff" text-anchor="middle">
+    <rect x="700" y="48" width="240" height="58" rx="12" fill="url(#gOut)"/>
+    <text x="820" y="74" font-size="17" font-weight="700">MQTT</text>
+    <text x="820" y="94" font-size="12" opacity="0.92">topics, set commands</text>
+
+    <rect x="700" y="126" width="240" height="58" rx="12" fill="url(#gOut)"/>
+    <text x="820" y="152" font-size="17" font-weight="700">JSON &amp; REST</text>
+    <text x="820" y="172" font-size="12" opacity="0.92">/json, /command</text>
+
+    <rect x="700" y="204" width="240" height="58" rx="12" fill="url(#gOut)"/>
+    <text x="820" y="230" font-size="17" font-weight="700">Modbus TCP</text>
+    <text x="820" y="250" font-size="12" opacity="0.92">PLC, Loxone · large board</text>
+  </g>
+  <rect x="700" y="294" width="240" height="92" rx="12" fill="none" stroke="#7d8590" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <g fill="#7d8590" text-anchor="middle" font-size="14" font-weight="600">
+    <text x="820" y="322">Home Assistant · openHAB</text>
+    <text x="820" y="344">ioBroker · Domoticz</text>
+    <text x="820" y="366">Node-RED</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#7d8590" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <path d="M262,114 H328" marker-start="url(#arr)" marker-end="url(#arr)"/>
+    <path d="M262,247 H300 Q312,247 312,235 V160 Q312,150 322,150 H328" marker-end="url(#arr)"/>
+    <path d="M262,305 H328" marker-end="url(#arr)"/>
+    <path d="M262,363 H300 Q312,363 312,351 V330 Q312,320 322,320 H328" marker-start="url(#arr)" marker-end="url(#arr)"/>
+    <path d="M632,77 H698" marker-start="url(#arr)" marker-end="url(#arr)"/>
+    <path d="M632,155 H698" marker-end="url(#arr)"/>
+    <path d="M632,233 H698" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  </g>
+</svg>
